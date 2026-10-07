@@ -4,6 +4,14 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/andrii-habchak/JSONPath-Lens.git"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@10.28.0",
   "scripts": {
     "dev": "wxt",
     "build": "wxt build",
