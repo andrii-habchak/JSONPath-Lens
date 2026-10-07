@@ -1,0 +1,29 @@
+# Builds the extension and attaches the packed zip to a GitHub release.
+# Trigger: push a tag like v0.1.0 (it should match "version" in package.json).
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm compile
+      - run: pnpm test
+      - run: pnpm build # → output/unpacked and output/packed/*.zip
+      - name: Create the release with the zip attached
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" output/packed/*.zip --title "JSONPath Lens $GITHUB_REF_NAME" --generate-notes

@@ -2,7 +2,7 @@ import { chromium, test as base, type BrowserContext, type FrameLocator, type Pa
 import path from 'node:path';
 import { startServer } from './server';
 
-const EXT = path.resolve('.output/chrome-mv3');
+const EXT = path.resolve('output/unpacked');
 
 export const test = base.extend<
   { page: Page; viewer: (page: Page) => FrameLocator },

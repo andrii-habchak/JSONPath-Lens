@@ -8,7 +8,7 @@ A Chrome extension that beautifies JSON API responses and lets you query them wi
 - **DevTools panel.** A **JSONPath Lens** tab in DevTools lists the JSON fetch/XHR responses of any page and opens them in the same viewer.
 - **Workspace.** A full tab where you can paste JSON, drop or open a file, or **Load URL** (a GET request with custom headers, optionally sending your cookies).
 
-To install it, see **[INSTALL.md](INSTALL.md)**.
+To install it, see **[INSTALL.md](INSTALL.md)**. Ready-to-install zips are attached to [Releases](https://github.com/andrii-habchak/JSONPath-Lens/releases); pushing a `v*` tag publishes a new one.
 
 ## Querying
 
@@ -70,15 +70,15 @@ scripts/            benchmark, icon generator
 
 ## Scripts
 
-| Command                                      | What it does                                 |
-| -------------------------------------------- | -------------------------------------------- |
-| `pnpm dev`                                   | Chrome with the extension and live reload    |
-| `pnpm build`                                 | Production build → `.output/chrome-mv3`      |
-| `pnpm zip`                                   | Zipped build                                 |
-| `pnpm test`                                  | Unit tests                                   |
-| `pnpm e2e`                                   | End-to-end tests (builds first)              |
-| `pnpm compile` / `pnpm lint` / `pnpm format` | Type check / ESLint / Prettier               |
-| `pnpm bench`                                 | Timings on generated 50 and 100 MB documents |
+| Command                                      | What it does                                                                               |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `pnpm dev`                                   | Chrome with the extension and live reload                                                  |
+| `pnpm build`                                 | Production build → `output/unpacked` (load in Chrome) and `output/packed/*.zip` (to share) |
+| `pnpm build:unpacked`                        | Only `output/unpacked`                                                                     |
+| `pnpm test`                                  | Unit tests                                                                                 |
+| `pnpm e2e`                                   | End-to-end tests (builds first)                                                            |
+| `pnpm compile` / `pnpm lint` / `pnpm format` | Type check / ESLint / Prettier                                                             |
+| `pnpm bench`                                 | Timings on generated 50 and 100 MB documents                                               |
 
 ## Git
 

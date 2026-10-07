@@ -14,8 +14,8 @@
   "packageManager": "pnpm@10.28.0",
   "scripts": {
     "dev": "wxt",
-    "build": "wxt build",
-    "zip": "wxt zip",
+    "build": "wxt zip",
+    "build:unpacked": "wxt build",
     "compile": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",

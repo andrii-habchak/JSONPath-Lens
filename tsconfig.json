@@ -11,5 +11,5 @@
     "skipLibCheck": true,
     "types": ["chrome"]
   },
-  "exclude": [".output", "node_modules", "playwright-report", "test-results"]
+  "exclude": ["output", "node_modules", "playwright-report", "test-results"]
 }

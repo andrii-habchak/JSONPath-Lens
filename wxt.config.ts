@@ -1,3 +1,5 @@
+import { mkdirSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { defineConfig } from 'wxt';
 import preact from '@preact/preset-vite';
 
@@ -5,7 +7,20 @@ import preact from '@preact/preset-vite';
 export default defineConfig({
   srcDir: '.',
   entrypointsDir: 'entrypoints',
-  outDir: '.output',
+  // Visible output folder (Chrome's file picker hides dot-folders):
+  //   output/unpacked/  – the extension to "Load unpacked"
+  //   output/packed/    – the zip to share / attach to a GitHub release
+  outDir: 'output',
+  outDirTemplate: 'unpacked{{modeSuffix}}',
+  zip: {
+    artifactTemplate: 'packed/{{name}}-{{packageVersion}}-{{browser}}{{modeSuffix}}.zip',
+  },
+  hooks: {
+    // WXT does not create sub-folders for zip artifacts.
+    'zip:extension:start': (wxt) => {
+      mkdirSync(resolve(wxt.config.outBaseDir, 'packed'), { recursive: true });
+    },
+  },
   vite: () => ({
     plugins: [preact()],
     worker: { format: 'es' },
