@@ -1,0 +1,10 @@
+node_modules/
+.output/
+.wxt/
+stats.html
+*.log
+test-results/
+playwright-report/
+tests/fixtures/generated/
+.DS_Store
+.idea/
