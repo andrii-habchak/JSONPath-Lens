@@ -80,6 +80,10 @@ scripts/            benchmark, icon generator
 | `pnpm compile` / `pnpm lint` / `pnpm format` | Type check / ESLint / Prettier               |
 | `pnpm bench`                                 | Timings on generated 50 and 100 MB documents |
 
+## Git
+
+This repository uses a repo-local git identity and pushes over SSH through a host alias. See [docs/git-setup.md](docs/git-setup.md).
+
 ## Privacy
 
 Everything runs locally. The extension has no analytics and no remote code, and it makes no network requests of its own; the only ones it makes are **Load URL**, **Re-fetch**, and showing CSP-sandboxed responses that are too big to hand over (over about 25 M characters). The workspace keeps the last pasted or opened document in the extension's IndexedDB so it can be restored. URL loads and DevTools hand-offs are never stored, and request headers are never saved.
