@@ -877,7 +877,7 @@ pre {
   font-weight: 600;
 }
 .results.filter-output {
-  width: min(50%, 760px);
+  width: min(45%, 760px);
 }
 .small-seg button {
   padding: 1px 8px;
@@ -888,7 +888,18 @@ pre {
   min-width: 26px;
 }
 .results.hints {
-  width: min(46%, 640px);
+  /* Third column, right of the results / filter output. */
+  flex: none;
+  width: clamp(280px, 26%, 420px);
+  min-width: 280px;
+}
+/* With three columns, the output pane gives up some width to the hints. */
+.results.filter-output:has(+ .results.hints),
+.results:not(.hints):has(+ .results.hints) {
+  width: min(36%, 620px);
+}
+.body > .tree {
+  min-width: 240px;
 }
 .hints-body {
   overflow: auto;

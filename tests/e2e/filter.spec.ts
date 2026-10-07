@@ -54,7 +54,23 @@ test.describe('Filter mode', () => {
     await hints.getByRole('button', { name: /^\$\.array\[\?@\.key > 1\]/ }).click();
     await expect(v.getByTestId('query-input')).toHaveValue('$.array[?@.key > 1]');
     await expect(v.getByTestId('filter-count')).toHaveText('1 result');
-    await expect(v.getByTestId('hints-pane')).toHaveCount(0);
+    // Hints stay open next to the output (they do not replace it).
+    await expect(v.getByTestId('hints-pane')).toBeVisible();
+    await expect(v.getByTestId('filter-output')).toBeVisible();
+    const out = await v.getByTestId('filter-output').boundingBox();
+    const hintsBox = await v.getByTestId('hints-pane').boundingBox();
+    expect(hintsBox!.x).toBeGreaterThanOrEqual(out!.x + out!.width - 1);
+  });
+
+  test('hints open next to search results', async ({ page, server, viewer }) => {
+    await page.goto(`${server.url}/data.json`);
+    const v = viewer(page);
+    await v.getByTestId('mode-search').click();
+    await v.getByTestId('query-input').fill('corp.io');
+    await expect(v.getByTestId('match-count')).toHaveText('1 match');
+    await v.getByTestId('hints-button').click();
+    await expect(v.getByTestId('hints-pane')).toBeVisible();
+    await expect(v.getByTestId('match-count')).toHaveText('1 match');
   });
 
   test('workspace: filter a pasted document', async ({ page, extensionId }) => {

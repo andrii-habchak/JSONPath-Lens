@@ -219,7 +219,6 @@ export function JsonViewer({ source, history, actions, onLoaded }: Props) {
         }
         sent.done = true;
         setFilterData(filtered);
-        setHintsOpen(false);
         setResult(r);
         setResultsOpen(true);
         setCurrent(0);
@@ -581,11 +580,10 @@ export function JsonViewer({ source, history, actions, onLoaded }: Props) {
         {ready &&
           view === 'text' &&
           (text === null ? <div class="center muted">Formatting…</div> : <TextView text={text} dark={isDark(theme)} />)}
-        {hintsOpen && ready && <HintsPane client={client} docKey={docKey} onPick={pickHint} onClose={() => setHintsOpen(false)} />}
-        {!hintsOpen && showFilter && filterData && (
+        {showFilter && filterData && (
           <FilterOutput data={filterData} dark={isDark(theme)} name={baseName} flash={flash} onClose={() => setResultsOpen(false)} />
         )}
-        {!hintsOpen && showResults && result && (
+        {showResults && result && (
           <ResultsPane
             result={result}
             current={current}
@@ -595,6 +593,8 @@ export function JsonViewer({ source, history, actions, onLoaded }: Props) {
             onClose={() => setResultsOpen(false)}
           />
         )}
+        {/* Hints sit to the right of the results / filter output instead of replacing them. */}
+        {hintsOpen && ready && <HintsPane client={client} docKey={docKey} onPick={pickHint} onClose={() => setHintsOpen(false)} />}
       </main>
 
       <footer class="status">
