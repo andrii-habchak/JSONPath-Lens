@@ -5,7 +5,7 @@ import { startServer } from './server';
 const EXT = path.resolve('output/unpacked');
 
 export const test = base.extend<
-  { page: Page; viewer: (page: Page) => FrameLocator },
+  { page: Page; viewer: (page: Page) => FrameLocator; queryMode: 'filter' | 'search' },
   { extContext: BrowserContext; extensionId: string; server: { url: string } }
 >({
   extContext: [
@@ -37,7 +37,11 @@ export const test = base.extend<
     },
     { scope: 'worker' },
   ],
-  page: async ({ extContext: context }, use) => {
+  // Most specs exercise Search mode; Filter specs opt in with test.use({ queryMode: 'filter' }).
+  queryMode: ['search', { option: true }],
+  page: async ({ extContext: context, extensionId, queryMode }, use) => {
+    const [sw] = context.serviceWorkers().filter((w) => w.url().includes(extensionId));
+    await sw.evaluate((mode) => chrome.storage.local.set({ settings: { queryMode: mode } }), queryMode);
     const page = await context.newPage();
     await use(page);
     await page.close();

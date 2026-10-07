@@ -21,6 +21,11 @@ export function quoteName(name: string): string {
   return out + "'";
 }
 
+/** One member-name segment: `.name` or `['odd name']`. */
+export function nameSegment(name: string): string {
+  return IDENT.test(name) ? `.${name}` : `[${quoteName(name)}]`;
+}
+
 /** JSONPath of a node: dotted where names allow it, bracketed otherwise. */
 export function pathOf(index: DocIndex, id: number): string {
   const parts: string[] = [];

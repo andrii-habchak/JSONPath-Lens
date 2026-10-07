@@ -283,3 +283,28 @@ describe('review fixes', () => {
     expect(doc.query('$[*].a').total).toBe(2);
   });
 });
+
+describe('suggestions', () => {
+  it('builds runnable example queries from the document', () => {
+    const doc = load(
+      JSON.stringify({
+        type: 'GetCategoriesResponse',
+        categories: [
+          { code: 'thnks_spn', index: -200, large: true, products: [{ code: 'a' }, { code: 'b' }, { code: 'c' }] },
+          { code: 'top10', index: 5, large: false, products: [] },
+        ],
+      }),
+    );
+    const s = doc.suggestions();
+    expect(s.map((x) => x.query)).toContain('$.categories[*].code');
+    for (const { query } of s) {
+      const r = doc.query(query, { mode: 'jsonpath' });
+      expect(r.error, query).toBeUndefined();
+      expect(r.total, query).toBeGreaterThan(0);
+    }
+  });
+
+  it('returns nothing for documents without object arrays', () => {
+    expect(load('[1,2,3]').suggestions()).toEqual([]);
+  });
+});

@@ -3,6 +3,8 @@ export type ThemePref = 'system' | 'light' | 'dark';
 
 export interface Settings {
   theme: ThemePref;
+  /** Last used query mode: Filter (JSONPath → output list) or Search (highlight in the tree). */
+  queryMode: 'filter' | 'search';
   /** Auto-beautify tabs that open a JSON URL. */
   autoDetect: boolean;
   /** Hosts where auto-beautify is skipped (exact host or *.suffix). */
@@ -13,6 +15,7 @@ export interface Settings {
 
 export const DEFAULT_SETTINGS: Settings = {
   theme: 'system',
+  queryMode: 'filter',
   autoDetect: true,
   blocklist: [],
   maxResults: 10_000,

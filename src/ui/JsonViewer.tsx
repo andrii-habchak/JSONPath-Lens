@@ -4,7 +4,9 @@ import type { LoadError, LoadInfo, QueryResult, Row } from '../core/types';
 import { WorkerClient } from '../worker/client';
 import { copyText, downloadText, formatBytes, formatCount } from './clipboard';
 import type { QueryHistory } from './history';
-import { isPathQuery, QueryBar, type SearchToggles } from './QueryBar';
+import { FilterOutput, type FilterData } from './FilterOutput';
+import { HintsPane } from './HintsPane';
+import { isPathQuery, QueryBar, type QueryMode, type SearchToggles } from './QueryBar';
 import { ResultsPane } from './ResultsPane';
 import { applyTheme, isDark, saveSettings, settings, type ThemePref } from './settings';
 import { TextView } from './TextView';
@@ -34,6 +36,10 @@ type Phase =
   | { kind: 'error'; error: LoadError; text: string };
 
 const DEBOUNCE_MS = 250;
+
+/** Identifies what a query run depends on besides its text. */
+const keyOf = (q: string, t: SearchToggles, m: QueryMode) =>
+  m === 'filter' ? 'filter' : isPathQuery(q) ? 'path' : `${t.regex}|${t.caseSensitive}|${t.scope}`;
 const HISTORY_IDLE_MS = 1500;
 
 /** The shared viewer: query bar, virtual tree, results pane, text view. */
@@ -61,6 +67,13 @@ export function JsonViewer({ source, history, actions, onLoaded }: Props) {
   const [busy, setBusy] = useState(false);
   const [slow, setSlow] = useState(false);
   const [resultsOpen, setResultsOpen] = useState(true);
+  const mode: QueryMode = settings.value.queryMode;
+  const setMode = (m: QueryMode) => {
+    if (m !== mode) saveSettings({ queryMode: m });
+  };
+  const [filterData, setFilterData] = useState<FilterData | null>(null);
+  const [hintsOpen, setHintsOpen] = useState(false);
+  const [docKey, setDocKey] = useState(0);
 
   const [selectedId, setSelectedId] = useState(-1);
   const [selectedPath, setSelectedPath] = useState('');
@@ -101,6 +114,7 @@ export function JsonViewer({ source, history, actions, onLoaded }: Props) {
     const bytes = typeof input === 'string' ? input.length : input.byteLength;
     setPhase({ kind: 'loading', bytes });
     setResult(null);
+    setFilterData(null);
     // A query typed while the first document was still loading is kept and runs
     // once it is ready; replacing a document starts with an empty query.
     if (hadDocument.current) setQuery('');
@@ -116,6 +130,7 @@ export function JsonViewer({ source, history, actions, onLoaded }: Props) {
         if (cancelled) return;
         if (r.ok) {
           setPhase({ kind: 'ready', info: r.info });
+          setDocKey((k) => k + 1);
           bump(r.visibleCount);
           onLoaded?.(r.info, null);
           if (stoppedNote.current) {
@@ -149,8 +164,6 @@ export function JsonViewer({ source, history, actions, onLoaded }: Props) {
   const browsing = useRef<string | null>(null);
   const ready = phase.kind === 'ready';
 
-  const keyOf = (q: string, t: SearchToggles) => (isPathQuery(q) ? 'path' : `${t.regex}|${t.caseSensitive}|${t.scope}`);
-
   const recordHistory = useCallback(
     (q: string, r: QueryResult) => {
       if (!q.trim() || r.error || r.mode === 'none') return;
@@ -160,14 +173,16 @@ export function JsonViewer({ source, history, actions, onLoaded }: Props) {
   );
 
   const run = useCallback(
-    async (q: string, opts: { record: 'now' | 'idle' | 'never'; t?: SearchToggles }) => {
+    async (q: string, opts: { record: 'now' | 'idle' | 'never'; t?: SearchToggles; m?: QueryMode }) => {
       if (!ready) return;
       const tg = opts.t ?? toggles;
+      const m = opts.m ?? mode;
       const seq = ++runSeq.current;
       if (historyTimer.current) clearTimeout(historyTimer.current);
       if (!q.trim()) {
         lastRun.current = null;
         setResult(null);
+        setFilterData(null);
         setBusy(false);
         setSlow(false);
         try {
@@ -177,21 +192,34 @@ export function JsonViewer({ source, history, actions, onLoaded }: Props) {
         }
         return;
       }
-      const sent = { q, key: keyOf(q, tg), done: false, recordOnFinish: opts.record === 'now' };
+      const sent = { q, key: keyOf(q, tg, m), done: false, recordOnFinish: opts.record === 'now' };
       lastRun.current = sent;
       setBusy(true);
       setSlow(false);
       const slowTimer = setTimeout(() => seq === runSeq.current && setSlow(true), 1500);
       try {
         const r = await client.call('query', q, {
-          mode: 'auto',
+          // Filter mode accepts JSONPath only.
+          mode: m === 'filter' ? 'jsonpath' : 'auto',
           regex: tg.regex,
           caseSensitive: tg.caseSensitive,
           scope: tg.scope,
           limit: settings.value.maxResults,
         });
         if (seq !== runSeq.current) return;
+        let filtered: FilterData | null = null;
+        if (m === 'filter') {
+          if (r.error) filtered = null;
+          else if (r.total === 0) filtered = { text: '[]', count: 0, total: 0, ms: r.ms };
+          else {
+            const out = await client.call('resultsText');
+            if (seq !== runSeq.current) return;
+            filtered = { text: out.text, count: out.count, total: out.total, ms: r.ms };
+          }
+        }
         sent.done = true;
+        setFilterData(filtered);
+        setHintsOpen(false);
         setResult(r);
         setResultsOpen(true);
         setCurrent(0);
@@ -215,7 +243,7 @@ export function JsonViewer({ source, history, actions, onLoaded }: Props) {
         }
       }
     },
-    [ready, toggles, client, bump, recordHistory],
+    [ready, toggles, mode, client, bump, recordHistory],
   );
 
   // Debounced run while typing.
@@ -223,15 +251,16 @@ export function JsonViewer({ source, history, actions, onLoaded }: Props) {
     if (!ready) return;
     const h = setTimeout(() => {
       const last = lastRun.current;
-      if (last && last.q === query && last.key === keyOf(query, toggles)) return;
+      if (last && last.q === query && last.key === keyOf(query, toggles, mode)) return;
       if (!query.trim() && !last) return; // nothing to clear
+      if (mode === 'filter' && !isPathQuery(query)) return; // wait for a JSONPath expression
       let record: 'now' | 'idle' | 'never' = browsing.current === query ? 'never' : 'idle';
       if (submittedEarly.current === query) record = 'now'; // Enter was pressed while loading
       submittedEarly.current = null;
       run(query, { record });
     }, DEBOUNCE_MS);
     return () => clearTimeout(h);
-  }, [query, toggles, ready]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [query, toggles, ready, mode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const stop = () => {
     runSeq.current++;
@@ -268,7 +297,7 @@ export function JsonViewer({ source, history, actions, onLoaded }: Props) {
       return;
     }
     const last = lastRun.current;
-    const same = last && last.q === query && last.key === keyOf(query, toggles);
+    const same = last && last.q === query && last.key === keyOf(query, toggles, mode);
     if (same && !last.done) {
       last.recordOnFinish = true; // still running: record it when it lands
     } else if (same && result) {
@@ -287,19 +316,30 @@ export function JsonViewer({ source, history, actions, onLoaded }: Props) {
   };
 
   /** Apply a history entry. A click records it again; ↑/↓ browsing does not. */
-  const pickHistory = (q: string, mode: string, viaKeys = false) => {
+  const pickHistory = (q: string, kind: string, viaKeys = false) => {
     let t = toggles;
-    if (mode === 'regex' && !t.regex) t = { ...t, regex: true };
-    if (mode === 'text' && t.regex) t = { ...t, regex: false };
+    if (kind === 'regex' && !t.regex) t = { ...t, regex: true };
+    if (kind === 'text' && t.regex) t = { ...t, regex: false };
+    // Text and regex searches only exist in Search mode.
+    if (kind !== 'jsonpath' && mode === 'filter') setMode('search');
     setToggles(t);
     setQuery(q);
     if (viaKeys) {
       browsing.current = q; // the debounced effect runs it without recording
     } else {
       browsing.current = null;
-      run(q, { record: 'now', t });
+      run(q, { record: 'now', t, m: kind !== 'jsonpath' ? 'search' : mode });
       inputRef.current?.focus();
     }
+  };
+
+  /** Run an example from the hints pane as a filter. */
+  const pickHint = (q: string) => {
+    browsing.current = null;
+    setMode('filter');
+    setQuery(q);
+    run(q, { record: 'now', m: 'filter' });
+    inputRef.current?.focus();
   };
 
   // ---- Tree actions --------------------------------------------------------
@@ -395,12 +435,21 @@ export function JsonViewer({ source, history, actions, onLoaded }: Props) {
   }, []);
 
   // ---- Render ----------------------------------------------------------------
-  const showResults = ready && result && result.mode !== 'none' && resultsOpen;
+  const showResults = ready && result && result.mode !== 'none' && resultsOpen && mode === 'search';
+  const showFilter = ready && mode === 'filter' && filterData !== null && resultsOpen;
+  const filterHint = ready && mode === 'filter' && query.trim() !== '' && !isPathQuery(query);
 
   return (
     <div class="jpl" data-testid="viewer">
       <header class="toolbar">
         <QueryBar
+          mode={mode}
+          onMode={(m) => {
+            setMode(m);
+            setResultsOpen(true);
+          }}
+          hintsOpen={hintsOpen}
+          onHints={() => setHintsOpen(!hintsOpen)}
           value={query}
           onInput={setQuery}
           onSubmit={submit}
@@ -484,7 +533,13 @@ export function JsonViewer({ source, history, actions, onLoaded }: Props) {
           <span class="muted">(stopping reloads the document)</span>
         </div>
       )}
-      {result?.error && (
+      {filterHint && (
+        <div class="hint" role="status" data-testid="filter-hint">
+          Filter takes a JSONPath expression starting with <code>$</code>, e.g. <code>$.items[*].id</code>. Press <strong>?</strong> for
+          examples, or switch to <strong>Search</strong> for plain-text search.
+        </div>
+      )}
+      {!filterHint && result?.error && (
         <div class="hint error" role="alert" data-testid="query-error">
           {result.error.message}
           {result.error.position !== undefined && (
@@ -526,7 +581,11 @@ export function JsonViewer({ source, history, actions, onLoaded }: Props) {
         {ready &&
           view === 'text' &&
           (text === null ? <div class="center muted">Formatting…</div> : <TextView text={text} dark={isDark(theme)} />)}
-        {showResults && result && (
+        {hintsOpen && ready && <HintsPane client={client} docKey={docKey} onPick={pickHint} onClose={() => setHintsOpen(false)} />}
+        {!hintsOpen && showFilter && filterData && (
+          <FilterOutput data={filterData} dark={isDark(theme)} name={baseName} flash={flash} onClose={() => setResultsOpen(false)} />
+        )}
+        {!hintsOpen && showResults && result && (
           <ResultsPane
             result={result}
             current={current}

@@ -3,6 +3,7 @@ import { parseDocument } from './parse';
 import { pathOf } from './path';
 import { runJsonPath, textSearch } from './query';
 import { previewOf, serialize, serializeDocument } from './serialize';
+import { suggestQueries, type Suggestion } from './suggest';
 import { TreeState } from './tree';
 import { T, TYPE_NAMES, type LoadError, type LoadInfo, type QueryOptions, type QueryResult, type ResultItem, type Row } from './types';
 
@@ -155,6 +156,11 @@ export class JsonDocument {
     }
     const text = parts.length ? '[\n  ' + parts.join(',\n  ') + '\n]' : '[]';
     return { text, count: parts.length, total: this.matchIds.length };
+  }
+
+  /** Example JSONPath queries that use this document's own names. */
+  suggestions(): Suggestion[] {
+    return suggestQueries(this.index);
   }
 
   clearQuery(): number {

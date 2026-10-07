@@ -870,3 +870,67 @@ pre {
 .err {
   color: var(--error);
 }
+
+/* ---- Filter / Search switch, filter output, hints ---- */
+.mode-switch button {
+  padding: 3px 9px;
+  font-weight: 600;
+}
+.results.filter-output {
+  width: min(50%, 760px);
+}
+.small-seg button {
+  padding: 1px 8px;
+  font-size: 12px;
+}
+.hint-btn {
+  font-weight: 700;
+  min-width: 26px;
+}
+.results.hints {
+  width: min(46%, 640px);
+}
+.hints-body {
+  overflow: auto;
+  flex: 1;
+  padding: 4px 10px 12px;
+}
+.hints-body h3 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fg-2);
+  margin: 14px 0 6px;
+}
+.hints-body p {
+  margin: 0 0 6px;
+}
+.hint-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  width: 100%;
+  text-align: left;
+  border: 1px solid transparent;
+  background: none;
+  border-radius: 6px;
+  padding: 4px 6px;
+  cursor: pointer;
+}
+.hint-item:hover {
+  background: var(--bg-2);
+  border-color: var(--border);
+}
+.hint-item code {
+  font-size: 12.5px;
+  color: var(--accent);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.hint-item .muted {
+  font-size: 12px;
+}
+.pad-top {
+  padding-top: 10px;
+}

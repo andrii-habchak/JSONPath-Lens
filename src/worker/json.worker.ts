@@ -35,6 +35,7 @@ const api: WorkerApi = {
   text: (kind) => need().text(kind),
   resultsText: (maxChars) => need().resultsText(maxChars),
   rowOf: (id) => need().rowOf(id),
+  suggestions: () => need().suggestions(),
 };
 
 self.onmessage = (e: MessageEvent<Request>) => {

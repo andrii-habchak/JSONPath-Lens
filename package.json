@@ -1,7 +1,7 @@
 {
   "name": "jsonpath-lens",
   "description": "Beautify JSON API responses and query them with JSONPath + regex.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "repository": {

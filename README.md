@@ -12,7 +12,12 @@ To install it, see **[INSTALL.md](INSTALL.md)**. Ready-to-install zips are attac
 
 ## Querying
 
-The query bar takes **JSONPath** when the input starts with `$`, and runs a **quick search** for anything else.
+The query bar has two modes; the last one you used is remembered.
+
+- **Filter** (default): a JSONPath expression. The right-hand pane shows the matched values as a new JSON array with a result count (`10 results`), as its own tree or text, with **Copy** and **Download**. The matches are also highlighted in the source tree.
+- **Search**: highlights matches in the tree and lists them with their paths. It accepts JSONPath (input starting with `$`) or a **quick search** in keys and values, with plain text or a regular expression.
+
+The **?** button opens JSONPath examples on the right: a few built from the loaded document's own names ("For this document") and a cheat sheet of selectors, filters, functions and `=~` regexes. Click an example to run it as a filter.
 
 | Query                                            | Returns                                                                                  |
 | ------------------------------------------------ | ---------------------------------------------------------------------------------------- |
@@ -30,7 +35,7 @@ JSONPath follows [RFC 9535](https://www.rfc-editor.org/rfc/rfc9535), using [json
 
 ### In the viewer
 
-- Matches are highlighted in the tree and their parents are expanded automatically. The right-hand pane lists each match with its path; click one to jump to it.
+- Matches are highlighted in the tree and their parents are expanded automatically. In Search mode the right-hand pane lists each match with its path; click one to jump to it.
 - **Enter** / **Shift+Enter** go to the next / previous match, **Esc** clears the query, and **/** focuses the query bar.
 - **History** lists the queries you ran on the current document; click one to run it again. With the bar empty, **↑ / ↓** step through it. History is kept in memory for each tab, workspace document and DevTools request, and is gone after a reload.
 - Hover a row and click **path** to copy its JSONPath (`$.items[3].price`, or `$['odd key'][0]` for keys that aren't plain identifiers), or **value** to copy its JSON. **⌘/Ctrl+C** copies the selected node.

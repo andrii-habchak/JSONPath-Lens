@@ -4,9 +4,9 @@ This repository is pushed **over SSH** through a host alias, the same way the Vi
 
 ## Identity (local to this repo)
 
-| Setting | Value |
-| --- | --- |
-| `user.name` | `andrii-habchak` |
+| Setting      | Value                      |
+| ------------ | -------------------------- |
+| `user.name`  | `andrii-habchak`           |
 | `user.email` | `andrey.gabchak@gmail.com` |
 
 Check it:
@@ -88,9 +88,9 @@ If you would rather not share the Vigil alias, give this project its own key and
 
 ## Troubleshooting
 
-| Message | Fix |
-| --- | --- |
-| `Permission denied (publickey)` | The remote uses `git@github.com:` instead of the alias, or the key is not loaded: run `ssh-add --apple-use-keychain <key file>` and check `ssh -T git@github-vigil`. |
-| `ERROR: Permission to … denied to deploy key` | The alias's key is a deploy key of another repository. Use the dedicated alias above. |
-| Commits show the wrong author | `git config --local user.email` is unset; set it as shown above. Fix the last commit with `git commit --amend --reset-author --no-edit`. |
-| Remote shows `https://github.com/…` | `git remote set-url origin git@github-vigil:andrii-habchak/JSONPath-Lens.git` |
+| Message                                       | Fix                                                                                                                                                                  |
+| --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Permission denied (publickey)`               | The remote uses `git@github.com:` instead of the alias, or the key is not loaded: run `ssh-add --apple-use-keychain <key file>` and check `ssh -T git@github-vigil`. |
+| `ERROR: Permission to … denied to deploy key` | The alias's key is a deploy key of another repository. Use the dedicated alias above.                                                                                |
+| Commits show the wrong author                 | `git config --local user.email` is unset; set it as shown above. Fix the last commit with `git commit --amend --reset-author --no-edit`.                             |
+| Remote shows `https://github.com/…`           | `git remote set-url origin git@github-vigil:andrii-habchak/JSONPath-Lens.git`                                                                                        |

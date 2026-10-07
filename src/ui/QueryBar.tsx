@@ -10,7 +10,14 @@ export interface SearchToggles {
   scope: SearchScope;
 }
 
+export type QueryMode = 'filter' | 'search';
+
 interface Props {
+  /** Filter: JSONPath only, output is the list of matched values. Search: highlight in the tree. */
+  mode: QueryMode;
+  onMode: (m: QueryMode) => void;
+  hintsOpen: boolean;
+  onHints: () => void;
   value: string;
   onInput: (v: string) => void;
   /** Run now (Enter). */
@@ -40,7 +47,8 @@ export function QueryBar(p: Props) {
   const inputRef = p.inputRef ?? localRef;
   const wrapRef = useRef<HTMLDivElement>(null);
   const entries = p.history.entries.value;
-  const pathMode = isPathQuery(p.value);
+  const filter = p.mode === 'filter';
+  const pathMode = filter || isPathQuery(p.value);
 
   useEffect(() => {
     if (!histOpen) return;
@@ -79,23 +87,55 @@ export function QueryBar(p: Props) {
   const t = p.toggles;
   let status = '';
   if (p.busy) status = '…';
-  else if (r && r.mode !== 'none') status = r.total ? `${formatCount(p.current + 1)} / ${formatCount(r.total)}` : r.error ? 'error' : '0';
+  else if (r && r.mode !== 'none') {
+    if (r.error) status = 'error';
+    else if (filter) status = `${formatCount(r.total)} ${r.total === 1 ? 'result' : 'results'}`;
+    else status = r.total ? `${formatCount(p.current + 1)} / ${formatCount(r.total)}` : '0';
+  }
 
   return (
     <div class="querybar" ref={wrapRef}>
-      <span
-        class={'mode-chip ' + (pathMode ? 'path' : t.regex ? 'regex' : 'text')}
-        title="Queries starting with $ run as JSONPath; anything else is a quick search"
-      >
-        {pathMode ? 'JSONPath' : t.regex ? 'Regex' : 'Text'}
-      </span>
+      <div class="segmented mode-switch" role="group" aria-label="Query mode">
+        <button
+          type="button"
+          class={filter ? 'on' : ''}
+          aria-pressed={filter}
+          data-testid="mode-filter"
+          title="Filter: run a JSONPath query and show the matched values as the output"
+          onClick={() => p.onMode('filter')}
+        >
+          Filter
+        </button>
+        <button
+          type="button"
+          class={!filter ? 'on' : ''}
+          aria-pressed={!filter}
+          data-testid="mode-search"
+          title="Search: highlight matches in the tree (JSONPath, text or regex)"
+          onClick={() => p.onMode('search')}
+        >
+          Search
+        </button>
+      </div>
+      {!filter && (
+        <span
+          class={'mode-chip ' + (pathMode ? 'path' : t.regex ? 'regex' : 'text')}
+          title="Queries starting with $ run as JSONPath; anything else is a quick search"
+        >
+          {pathMode ? 'JSONPath' : t.regex ? 'Regex' : 'Text'}
+        </span>
+      )}
       <input
         ref={inputRef}
         class={'query-input' + (r?.error ? ' has-error' : '')}
         type="text"
         spellcheck={false}
         autocomplete="off"
-        placeholder="$.items[?@.status == 'FAILED'].id   ·   $..[?@.email =~ /gmail/i]   ·   or plain text"
+        placeholder={
+          filter
+            ? "JSONPath filter, e.g. $.items[?@.status == 'FAILED'].id   (? for examples)"
+            : "$.items[?@.status == 'FAILED'].id   ·   $..[?@.email =~ /gmail/i]   ·   or plain text"
+        }
         value={p.value}
         aria-label="Query"
         data-testid="query-input"
@@ -114,38 +154,42 @@ export function QueryBar(p: Props) {
       <button type="button" class="btn icon" onClick={p.onNext} disabled={!r?.total} title="Next match (Enter)">
         ↓
       </button>
-      <span class="sep" />
-      <button
-        type="button"
-        class={'btn toggle' + (t.regex ? ' on' : '')}
-        aria-pressed={t.regex}
-        disabled={pathMode}
-        title="Quick search: regular expression"
-        onClick={() => p.onToggles({ ...t, regex: !t.regex })}
-      >
-        .*
-      </button>
-      <button
-        type="button"
-        class={'btn toggle' + (t.caseSensitive ? ' on' : '')}
-        aria-pressed={t.caseSensitive}
-        disabled={pathMode}
-        title="Quick search: case-sensitive"
-        onClick={() => p.onToggles({ ...t, caseSensitive: !t.caseSensitive })}
-      >
-        Aa
-      </button>
-      <select
-        class="scope"
-        value={t.scope}
-        disabled={pathMode}
-        title="Quick search scope"
-        onChange={(e) => p.onToggles({ ...t, scope: (e.currentTarget as HTMLSelectElement).value as SearchScope })}
-      >
-        <option value="both">Keys + values</option>
-        <option value="keys">Keys</option>
-        <option value="values">Values</option>
-      </select>
+      {!filter && (
+        <>
+          <span class="sep" />
+          <button
+            type="button"
+            class={'btn toggle' + (t.regex ? ' on' : '')}
+            aria-pressed={t.regex}
+            disabled={pathMode}
+            title="Quick search: regular expression"
+            onClick={() => p.onToggles({ ...t, regex: !t.regex })}
+          >
+            .*
+          </button>
+          <button
+            type="button"
+            class={'btn toggle' + (t.caseSensitive ? ' on' : '')}
+            aria-pressed={t.caseSensitive}
+            disabled={pathMode}
+            title="Quick search: case-sensitive"
+            onClick={() => p.onToggles({ ...t, caseSensitive: !t.caseSensitive })}
+          >
+            Aa
+          </button>
+          <select
+            class="scope"
+            value={t.scope}
+            disabled={pathMode}
+            title="Quick search scope"
+            onChange={(e) => p.onToggles({ ...t, scope: (e.currentTarget as HTMLSelectElement).value as SearchScope })}
+          >
+            <option value="both">Keys + values</option>
+            <option value="keys">Keys</option>
+            <option value="values">Values</option>
+          </select>
+        </>
+      )}
       <div class="history-wrap">
         <button
           type="button"
@@ -200,6 +244,16 @@ export function QueryBar(p: Props) {
           </div>
         )}
       </div>
+      <button
+        type="button"
+        class={'btn icon hint-btn' + (p.hintsOpen ? ' on' : '')}
+        aria-pressed={p.hintsOpen}
+        title="JSONPath examples and syntax"
+        data-testid="hints-button"
+        onClick={p.onHints}
+      >
+        ?
+      </button>
     </div>
   );
 }

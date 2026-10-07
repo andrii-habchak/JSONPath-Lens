@@ -19,6 +19,7 @@ export interface WorkerApi {
   text(kind: 'pretty' | 'original'): string;
   resultsText(maxChars?: number): { text: string; count: number; total: number };
   rowOf(id: number): number;
+  suggestions(): { query: string; description: string }[];
 }
 
 export type Method = keyof WorkerApi;
