@@ -10,6 +10,37 @@ A Chrome extension that beautifies JSON API responses and lets you query them wi
 
 To install it, see **[INSTALL.md](INSTALL.md)**. Ready-to-install zips are attached to [Releases](https://github.com/andrii-habchak/JSONPath-Lens/releases); pushing a `v*` tag publishes a new one.
 
+## Screenshots
+
+![Filter mode: a JSONPath filter with the matched values and their count on the right](docs/screenshots/filter.png)
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/filter-history-examples.png" alt="Query history and the JSONPath examples pane"></td>
+    <td width="50%"><img src="docs/screenshots/search.png" alt="Search mode: matches highlighted in the tree and listed with their paths"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>History</b> and <b>?</b> examples next to the filter output</td>
+    <td align="center"><b>Search</b>: matches highlighted in the tree and listed with their paths</td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/workspace-paste.png" alt="The empty workspace"></td>
+    <td><img src="docs/screenshots/workspace-filter.png" alt="The workspace with pasted JSON and a filter"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Workspace</b>: paste JSON, drop a file or load a URL</td>
+    <td align="center">Pasted JSON, filtered the same way as a JSON tab</td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/search-examples.png" alt="Search mode with the examples pane"></td>
+    <td><img src="docs/screenshots/original.png" alt="Chrome's original rendering with the Back to JSONPath Lens button"></td>
+  </tr>
+  <tr>
+    <td align="center">Search with the examples pane open</td>
+    <td align="center"><b>Original</b> shows Chrome's own rendering, one click back to the viewer</td>
+  </tr>
+</table>
+
 ## Querying
 
 The query bar has two modes; the last one you used is remembered.
