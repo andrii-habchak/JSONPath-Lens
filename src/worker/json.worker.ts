@@ -33,7 +33,8 @@ const api: WorkerApi = {
   path: (id) => need().path(id),
   valueText: (id, pretty) => need().valueText(id, pretty),
   text: (kind) => need().text(kind),
-  resultsText: () => need().resultsText(),
+  resultsText: (maxChars) => need().resultsText(maxChars),
+  rowOf: (id) => need().rowOf(id),
 };
 
 self.onmessage = (e: MessageEvent<Request>) => {

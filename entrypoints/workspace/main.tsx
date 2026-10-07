@@ -28,16 +28,25 @@ function Workspace() {
   const [panel, setPanel] = useState<'paste' | 'url' | null>('paste');
   const [dragging, setDragging] = useState(false);
   const [lastRequest, setLastRequest] = useState<FetchOutcome | null>(null);
+  // Load URL form state lives here so it survives closing the panel (memory only).
+  const urlForm = useState<UrlForm>({ url: '', headers: 'Accept: application/json', cookies: true });
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const load = (text: string, opts: { contentType?: string | null; name?: string; label: string; persist?: boolean }) => {
+  const loadedRef = useRef(false);
+  /** The user focused or typed into the paste box (restore must not overwrite it). */
+  const touched = useRef(false);
+  const load = (
+    text: string,
+    opts: { contentType?: string | null; name?: string; label: string; persist?: boolean; keepPanel?: boolean },
+  ) => {
+    loadedRef.current = true;
     setLoaded({
       id: ++docSeq,
       source: { input: text, contentType: opts.contentType ?? null, name: opts.name ?? 'pasted' },
       history: new QueryHistory(),
       label: opts.label,
     });
-    setPanel(null);
+    if (!opts.keepPanel) setPanel(null);
     if (opts.persist !== false && text.length < RESTORE_LIMIT) {
       const doc: StoredDoc = { text, contentType: opts.contentType, name: opts.name, savedAt: Date.now() };
       idbSet(LAST_DOC_KEY, doc).catch(() => undefined);
@@ -53,18 +62,27 @@ function Workspace() {
         if (!doc) return;
         idbDelete(key).catch(() => undefined);
         history.replaceState(null, '', location.pathname);
-        load(doc.text, { contentType: doc.contentType, name: doc.name, label: doc.name ?? 'From DevTools' });
+        // DevTools responses may carry session data: not kept for the next visit.
+        load(doc.text, { contentType: doc.contentType, name: doc.name, label: doc.name ?? 'From DevTools', persist: false });
       });
       return;
     }
     idbGet<StoredDoc>(LAST_DOC_KEY)
       .then((doc) => {
-        if (!doc) return;
-        if (doc.text.length <= TEXTAREA_LIMIT) setInput(doc.text);
-        load(doc.text, { contentType: doc.contentType, name: doc.name, label: `${doc.name ?? 'Last document'} (restored)`, persist: false });
+        // Never clobber something the user already pasted or opened.
+        if (!doc || loadedRef.current) return;
+        // Leave the input alone once the user has started using it.
+        if (doc.text.length <= TEXTAREA_LIMIT && !touched.current) setInput(doc.text);
+        load(doc.text, {
+          contentType: doc.contentType,
+          name: doc.name,
+          label: `${doc.name ?? 'Last document'} (restored)`,
+          persist: false,
+          keepPanel: true,
+        });
       })
       .catch(() => undefined);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   const openFile = async (file: File) => {
     const text = await file.text();
@@ -112,13 +130,23 @@ function Workspace() {
           {loaded ? loaded.label : 'Workspace'}
         </span>
         <span class="spacer" />
-        <button type="button" class={'btn' + (panel === 'paste' ? ' on' : '')} onClick={() => setPanel(panel === 'paste' ? null : 'paste')} data-testid="paste-toggle">
+        <button
+          type="button"
+          class={'btn' + (panel === 'paste' ? ' on' : '')}
+          onClick={() => setPanel(panel === 'paste' ? null : 'paste')}
+          data-testid="paste-toggle"
+        >
           Paste / edit
         </button>
         <button type="button" class="btn" onClick={() => fileRef.current?.click()}>
           Open file…
         </button>
-        <button type="button" class={'btn' + (panel === 'url' ? ' on' : '')} onClick={() => setPanel(panel === 'url' ? null : 'url')} data-testid="url-toggle">
+        <button
+          type="button"
+          class={'btn' + (panel === 'url' ? ' on' : '')}
+          onClick={() => setPanel(panel === 'url' ? null : 'url')}
+          data-testid="url-toggle"
+        >
           Load URL…
         </button>
         <a class="btn" href="/options.html" target="_blank" rel="noreferrer">
@@ -146,7 +174,11 @@ function Workspace() {
             wrap="off"
             placeholder="Paste JSON or NDJSON here, drop a file anywhere on the page, or use Open file… / Load URL…"
             value={input}
-            onInput={(e) => setInput((e.currentTarget as HTMLTextAreaElement).value)}
+            onFocus={() => (touched.current = true)}
+            onInput={(e) => {
+              touched.current = true;
+              setInput((e.currentTarget as HTMLTextAreaElement).value);
+            }}
             onPaste={onPaste}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
@@ -156,22 +188,35 @@ function Workspace() {
             }}
           />
           <div class="ws-panel-actions">
-            <button type="button" class="btn primary" disabled={!input.trim()} onClick={() => load(input, { label: 'Pasted text' })} data-testid="format-button">
+            <button
+              type="button"
+              class="btn primary"
+              disabled={!input.trim()}
+              onClick={() => load(input, { label: 'Pasted text' })}
+              data-testid="format-button"
+            >
               Format
             </button>
             <button type="button" class="btn" disabled={!input} onClick={() => setInput('')}>
               Clear
             </button>
-            <span class="muted small">Ctrl/⌘+Enter formats. The last document is restored when you reopen the workspace; query history is not.</span>
+            <span class="muted small">
+              Ctrl/⌘+Enter formats. The last pasted or opened document is restored when you reopen the workspace (URL loads are not kept);
+              query history is not.
+            </span>
           </div>
         </div>
       )}
 
       {panel === 'url' && (
         <UrlPanel
+          form={urlForm[0]}
+          setForm={urlForm[1]}
           onLoaded={(out) => {
             setLastRequest(out);
-            if (out.ok) load(out.text, { contentType: out.contentType, name: nameFromUrl(out.url), label: `GET ${out.url}` });
+            // Responses fetched with cookies or headers may be private: never written to disk.
+            if (out.ok)
+              load(out.text, { contentType: out.contentType, name: nameFromUrl(out.url), label: `GET ${out.url}`, persist: false });
           }}
           last={lastRequest}
         />
@@ -191,10 +236,27 @@ function Workspace() {
   );
 }
 
-function UrlPanel({ onLoaded, last }: { onLoaded: (o: FetchOutcome) => void; last: FetchOutcome | null }) {
-  const [url, setUrl] = useState(last?.url ?? '');
-  const [headers, setHeaders] = useState('Accept: application/json');
-  const [cookies, setCookies] = useState(true);
+interface UrlForm {
+  url: string;
+  headers: string;
+  cookies: boolean;
+}
+
+function UrlPanel({
+  form,
+  setForm,
+  onLoaded,
+  last,
+}: {
+  form: UrlForm;
+  setForm: (f: UrlForm) => void;
+  onLoaded: (o: FetchOutcome) => void;
+  last: FetchOutcome | null;
+}) {
+  const { url, headers, cookies } = form;
+  const setUrl = (v: string) => setForm({ ...form, url: v });
+  const setHeaders = (v: string) => setForm({ ...form, headers: v });
+  const setCookies = (v: boolean) => setForm({ ...form, cookies: v });
   const [busy, setBusy] = useState(false);
   const parsed = useMemo(() => parseHeaderLines(headers), [headers]);
 
@@ -223,7 +285,8 @@ function UrlPanel({ onLoaded, last }: { onLoaded: (o: FetchOutcome) => void; las
           onInput={(e) => setUrl((e.currentTarget as HTMLInputElement).value)}
         />
         <label class="check" title="Send this browser's cookies for the target site (credentials: 'include')">
-          <input type="checkbox" checked={cookies} onChange={(e) => setCookies((e.currentTarget as HTMLInputElement).checked)} /> Send cookies
+          <input type="checkbox" checked={cookies} onChange={(e) => setCookies((e.currentTarget as HTMLInputElement).checked)} /> Send
+          cookies
         </label>
         <button class="btn primary" type="submit" disabled={busy} data-testid="url-load">
           {busy ? 'Loading…' : 'Load'}
@@ -233,7 +296,14 @@ function UrlPanel({ onLoaded, last }: { onLoaded: (o: FetchOutcome) => void; las
         <span class="muted small">
           Request headers, one <code>Name: value</code> per line (e.g. <code>Authorization: Bearer …</code>). Never saved.
         </span>
-        <textarea class="headers-input" rows={3} spellcheck={false} value={headers} onInput={(e) => setHeaders((e.currentTarget as HTMLTextAreaElement).value)} data-testid="headers-input" />
+        <textarea
+          class="headers-input"
+          rows={3}
+          spellcheck={false}
+          value={headers}
+          onInput={(e) => setHeaders((e.currentTarget as HTMLTextAreaElement).value)}
+          data-testid="headers-input"
+        />
       </label>
       {parsed.errors.length > 0 && <div class="hint error">Ignored lines: {parsed.errors.join(', ')}</div>}
       {last && <RequestStrip out={last} />}
@@ -256,7 +326,9 @@ function RequestStrip({ out }: { out: FetchOutcome }) {
       <div class="req-grid">
         <div>
           <strong>Request headers</strong>
-          <pre>{Object.entries(out.requestHeaders).map(([k, v]) => `${k}: ${/authorization|cookie|token|key/i.test(k) ? '••••••' : v}\n`)}</pre>
+          <pre>
+            {Object.entries(out.requestHeaders).map(([k, v]) => `${k}: ${/authorization|cookie|token|key/i.test(k) ? '••••••' : v}\n`)}
+          </pre>
           <span class="muted small">Cookies: {out.credentials === 'include' ? 'sent' : 'not sent'}</span>
         </div>
         {out.ok && (

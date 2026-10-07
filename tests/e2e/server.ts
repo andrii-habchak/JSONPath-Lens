@@ -7,12 +7,12 @@ export const SAMPLE = {
     { key: 2, dictionary: { a: 'yes' } },
   ],
   users: [
-    { name: 'Andrii', email: 'a@gmail.com', id: 12345678901234567890 },
+    { name: 'Andrii', email: 'a@gmail.com', id: 'BIG_ID' }, // replaced by an unsafe integer below
     { name: 'bob', email: 'bob@corp.io', id: 2 },
   ],
 };
 
-const SAMPLE_TEXT = JSON.stringify(SAMPLE).replace('12345678901234567000', '12345678901234567890');
+const SAMPLE_TEXT = JSON.stringify(SAMPLE).replace('"BIG_ID"', '12345678901234567890');
 
 const NDJSON = [
   '{"level":"INFO","service":"wallet","msg":"ok"}',
@@ -52,6 +52,11 @@ const routes: Record<string, Route> = {
     }
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end('{"user":{"id":7,"roles":["admin","dev"]}}');
+  },
+  '/embed.html': (req, res) => {
+    const id = new URL(req.url ?? '/', 'http://x').searchParams.get('id');
+    res.writeHead(200, { 'content-type': 'text/html' });
+    res.end(`<!doctype html><iframe id="f" src="chrome-extension://${id}/viewer.html?stash=forged" width="800" height="300"></iframe>`);
   },
   '/export.ndjson': send(NDJSON, 'application/x-ndjson', { 'content-disposition': 'attachment; filename="export.ndjson"' }),
 };

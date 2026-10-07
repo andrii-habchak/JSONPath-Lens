@@ -27,17 +27,24 @@ interface Props {
   onLoaded?: (info: LoadInfo | null, error: LoadError | null) => void;
 }
 
-type Phase = { kind: 'empty' } | { kind: 'loading'; bytes: number } | { kind: 'ready'; info: LoadInfo } | { kind: 'error'; error: LoadError; text: string };
+type Phase =
+  | { kind: 'empty' }
+  | { kind: 'loading'; bytes: number }
+  | { kind: 'ready'; info: LoadInfo }
+  | { kind: 'error'; error: LoadError; text: string };
 
 const DEBOUNCE_MS = 250;
 const HISTORY_IDLE_MS = 1500;
 
 /** The shared viewer: query bar, virtual tree, results pane, text view. */
 export function JsonViewer({ source, history, actions, onLoaded }: Props) {
-  const clientRef = useRef<WorkerClient | null>(null);
-  if (!clientRef.current) clientRef.current = new WorkerClient();
-  const client = clientRef.current;
+  // The worker owns the document. "Stop" replaces it with a fresh one and reloads.
+  const [client, setClient] = useState(() => new WorkerClient());
   useEffect(() => () => client.terminate(), [client]);
+  /** Copy of the input kept for reloading after "Stop" (an ArrayBuffer is transferred away). */
+  const retained = useRef<{ source: ViewerSource; input: string | ArrayBuffer } | null>(null);
+  const stoppedNote = useRef(false);
+  const hadDocument = useRef(false);
 
   const [phase, setPhase] = useState<Phase>({ kind: 'empty' });
   const [visibleCount, setVisibleCount] = useState(0);
@@ -52,6 +59,7 @@ export function JsonViewer({ source, history, actions, onLoaded }: Props) {
   const [result, setResult] = useState<QueryResult | null>(null);
   const [current, setCurrent] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [slow, setSlow] = useState(false);
   const [resultsOpen, setResultsOpen] = useState(true);
 
   const [selectedId, setSelectedId] = useState(-1);
@@ -69,9 +77,9 @@ export function JsonViewer({ source, history, actions, onLoaded }: Props) {
   const theme = settings.value.theme;
   useEffect(() => applyTheme(theme), [theme]);
 
-  const flash = useCallback((msg: string) => {
+  const flash = useCallback((msg: string, ms = 1600) => {
     setToast(msg);
-    setTimeout(() => setToast((t) => (t === msg ? '' : t)), 1600);
+    setTimeout(() => setToast((t) => (t === msg ? '' : t)), ms);
   }, []);
 
   // ---- Loading -------------------------------------------------------------
@@ -81,22 +89,39 @@ export function JsonViewer({ source, history, actions, onLoaded }: Props) {
       return;
     }
     let cancelled = false;
-    const bytes = typeof source.input === 'string' ? source.input.length : source.input.byteLength;
+    let input: string | ArrayBuffer;
+    if (retained.current?.source === source) {
+      // Reload after "Stop": hand the worker a fresh copy.
+      const kept = retained.current.input;
+      input = typeof kept === 'string' ? kept : kept.slice(0);
+    } else {
+      input = source.input;
+      retained.current = { source, input: typeof input === 'string' ? input : input.slice(0) };
+    }
+    const bytes = typeof input === 'string' ? input.length : input.byteLength;
     setPhase({ kind: 'loading', bytes });
     setResult(null);
-    setQuery('');
+    // A query typed while the first document was still loading is kept and runs
+    // once it is ready; replacing a document starts with an empty query.
+    if (hadDocument.current) setQuery('');
+    hadDocument.current = true;
+    lastRun.current = null;
     setSelectedId(-1);
     setSelectedPath('');
     setText(null);
     setView('tree');
     client
-      .call('load', source.input, source.contentType ?? null)
+      .call('load', input, source.contentType ?? null)
       .then((r) => {
         if (cancelled) return;
         if (r.ok) {
           setPhase({ kind: 'ready', info: r.info });
           bump(r.visibleCount);
           onLoaded?.(r.info, null);
+          if (stoppedNote.current) {
+            stoppedNote.current = false;
+            flash('Query stopped; document reloaded', 3000);
+          }
         } else {
           setPhase({ kind: 'error', error: r.error, text: r.text });
           onLoaded?.(null, r.error);
@@ -115,22 +140,27 @@ export function JsonViewer({ source, history, actions, onLoaded }: Props) {
 
   // ---- Querying ------------------------------------------------------------
   const runSeq = useRef(0);
-  const lastRun = useRef<{ q: string; key: string } | null>(null);
+  /** The query last sent to the worker (set when sent, so the debounce never re-sends it). */
+  const lastRun = useRef<{ q: string; key: string; done: boolean; recordOnFinish: boolean } | null>(null);
   const historyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** A query submitted with Enter before the document finished loading. */
+  const submittedEarly = useRef<string | null>(null);
+  /** A query picked with ↑/↓ that must not be recorded (browsing would reorder the list). */
+  const browsing = useRef<string | null>(null);
   const ready = phase.kind === 'ready';
 
-  const optionsKey = (q: string) => (isPathQuery(q) ? 'path' : `${toggles.regex}|${toggles.caseSensitive}|${toggles.scope}`);
+  const keyOf = (q: string, t: SearchToggles) => (isPathQuery(q) ? 'path' : `${t.regex}|${t.caseSensitive}|${t.scope}`);
 
   const recordHistory = useCallback(
     (q: string, r: QueryResult) => {
       if (!q.trim() || r.error || r.mode === 'none') return;
-      history.add(q, r.mode, r.total);
+      history.add(q.trim(), r.mode, r.total);
     },
     [history],
   );
 
   const run = useCallback(
-    async (q: string, opts: { addHistory: boolean; t?: SearchToggles }) => {
+    async (q: string, opts: { record: 'now' | 'idle' | 'never'; t?: SearchToggles }) => {
       if (!ready) return;
       const tg = opts.t ?? toggles;
       const seq = ++runSeq.current;
@@ -138,11 +168,20 @@ export function JsonViewer({ source, history, actions, onLoaded }: Props) {
       if (!q.trim()) {
         lastRun.current = null;
         setResult(null);
-        const n = await client.call('clearQuery');
-        bump(n);
+        setBusy(false);
+        setSlow(false);
+        try {
+          bump(await client.call('clearQuery'));
+        } catch {
+          // worker replaced
+        }
         return;
       }
+      const sent = { q, key: keyOf(q, tg), done: false, recordOnFinish: opts.record === 'now' };
+      lastRun.current = sent;
       setBusy(true);
+      setSlow(false);
+      const slowTimer = setTimeout(() => seq === runSeq.current && setSlow(true), 1500);
       try {
         const r = await client.call('query', q, {
           mode: 'auto',
@@ -152,7 +191,7 @@ export function JsonViewer({ source, history, actions, onLoaded }: Props) {
           limit: settings.value.maxResults,
         });
         if (seq !== runSeq.current) return;
-        lastRun.current = { q, key: isPathQuery(q) ? 'path' : `${tg.regex}|${tg.caseSensitive}|${tg.scope}` };
+        sent.done = true;
         setResult(r);
         setResultsOpen(true);
         setCurrent(0);
@@ -164,10 +203,16 @@ export function JsonViewer({ source, history, actions, onLoaded }: Props) {
           setTreeScroll({ index: r.firstIndex, nonce: ++nonce.current, align: 'center' });
           setResultsScroll({ index: 0, nonce: ++nonce.current, align: 'start' });
         }
-        if (opts.addHistory) recordHistory(q, r);
-        else historyTimer.current = setTimeout(() => recordHistory(q, r), HISTORY_IDLE_MS);
+        if (sent.recordOnFinish) recordHistory(q, r);
+        else if (opts.record === 'idle') historyTimer.current = setTimeout(() => recordHistory(q, r), HISTORY_IDLE_MS);
+      } catch {
+        // The worker was stopped or failed; the load effect reports it.
       } finally {
-        if (seq === runSeq.current) setBusy(false);
+        clearTimeout(slowTimer);
+        if (seq === runSeq.current) {
+          setBusy(false);
+          setSlow(false);
+        }
       }
     },
     [ready, toggles, client, bump, recordHistory],
@@ -177,11 +222,25 @@ export function JsonViewer({ source, history, actions, onLoaded }: Props) {
   useEffect(() => {
     if (!ready) return;
     const h = setTimeout(() => {
-      if (lastRun.current?.q === query && lastRun.current.key === optionsKey(query)) return;
-      run(query, { addHistory: false });
+      const last = lastRun.current;
+      if (last && last.q === query && last.key === keyOf(query, toggles)) return;
+      if (!query.trim() && !last) return; // nothing to clear
+      let record: 'now' | 'idle' | 'never' = browsing.current === query ? 'never' : 'idle';
+      if (submittedEarly.current === query) record = 'now'; // Enter was pressed while loading
+      submittedEarly.current = null;
+      run(query, { record });
     }, DEBOUNCE_MS);
     return () => clearTimeout(h);
   }, [query, toggles, ready]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const stop = () => {
+    runSeq.current++;
+    stoppedNote.current = true;
+    setBusy(false);
+    setSlow(false);
+    client.terminate();
+    setClient(new WorkerClient());
+  };
 
   const goTo = useCallback(
     async (k: number) => {
@@ -202,29 +261,45 @@ export function JsonViewer({ source, history, actions, onLoaded }: Props) {
   );
 
   const submit = () => {
-    const same = lastRun.current?.q === query && lastRun.current.key === optionsKey(query);
-    if (same && result && result.total) {
+    browsing.current = null;
+    if (!ready) {
+      // Still loading: the debounced run records it once the document is ready.
+      submittedEarly.current = query;
+      return;
+    }
+    const last = lastRun.current;
+    const same = last && last.q === query && last.key === keyOf(query, toggles);
+    if (same && !last.done) {
+      last.recordOnFinish = true; // still running: record it when it lands
+    } else if (same && result) {
       recordHistory(query, result);
       if (historyTimer.current) clearTimeout(historyTimer.current);
-      goTo(current + 1);
+      if (result.total) goTo(current + 1);
     } else {
-      run(query, { addHistory: true });
+      run(query, { record: 'now' });
     }
   };
 
   const clearQuery = () => {
+    browsing.current = null;
     setQuery('');
-    run('', { addHistory: false });
+    run('', { record: 'never' });
   };
 
-  const pickHistory = (q: string, mode: string) => {
+  /** Apply a history entry. A click records it again; ↑/↓ browsing does not. */
+  const pickHistory = (q: string, mode: string, viaKeys = false) => {
     let t = toggles;
     if (mode === 'regex' && !t.regex) t = { ...t, regex: true };
     if (mode === 'text' && t.regex) t = { ...t, regex: false };
     setToggles(t);
     setQuery(q);
-    run(q, { addHistory: true, t });
-    inputRef.current?.focus();
+    if (viaKeys) {
+      browsing.current = q; // the debounced effect runs it without recording
+    } else {
+      browsing.current = null;
+      run(q, { record: 'now', t });
+      inputRef.current?.focus();
+    }
   };
 
   // ---- Tree actions --------------------------------------------------------
@@ -278,7 +353,11 @@ export function JsonViewer({ source, history, actions, onLoaded }: Props) {
     const kind = info?.kind === 'ndjson' ? 'original' : 'pretty';
     const t = await client.call('text', kind);
     const ext = info?.kind === 'ndjson' ? '.ndjson' : '.json';
-    downloadText(t, baseName.endsWith(ext) ? baseName : baseName + ext, info?.kind === 'ndjson' ? 'application/x-ndjson' : 'application/json');
+    downloadText(
+      t,
+      baseName.endsWith(ext) ? baseName : baseName + ext,
+      info?.kind === 'ndjson' ? 'application/x-ndjson' : 'application/json',
+    );
   };
 
   const copyAll = async () => {
@@ -287,8 +366,11 @@ export function JsonViewer({ source, history, actions, onLoaded }: Props) {
   };
 
   const copyResults = async () => {
-    const t = await client.call('resultsText');
-    flash((await copyText(t)) ? `Copied ${formatCount(result?.total ?? 0)} values` : 'Copy failed');
+    const r = await client.call('resultsText');
+    const ok = await copyText(r.text);
+    if (!ok) flash('Copy failed');
+    else if (r.count < r.total) flash(`Copied first ${formatCount(r.count)} of ${formatCount(r.total)} values (size limit)`, 3000);
+    else flash(`Copied ${formatCount(r.count)} values`);
   };
 
   const cycleTheme = () => {
@@ -339,16 +421,34 @@ export function JsonViewer({ source, history, actions, onLoaded }: Props) {
             <button type="button" class={view === 'tree' ? 'on' : ''} onClick={() => setView('tree')} disabled={!ready}>
               Tree
             </button>
-            <button type="button" class={view === 'text' ? 'on' : ''} onClick={() => setView('text')} disabled={!ready} data-testid="text-view-button">
+            <button
+              type="button"
+              class={view === 'text' ? 'on' : ''}
+              onClick={() => setView('text')}
+              disabled={!ready}
+              data-testid="text-view-button"
+            >
               Text
             </button>
           </div>
           {view === 'tree' ? (
             <>
-              <button type="button" class="btn" disabled={!ready} onClick={async () => bump(await client.call('expandAll'))} title="Expand all">
+              <button
+                type="button"
+                class="btn"
+                disabled={!ready}
+                onClick={async () => bump(await client.call('expandAll'))}
+                title="Expand all"
+              >
                 Expand all
               </button>
-              <button type="button" class="btn" disabled={!ready} onClick={async () => bump(await client.call('collapseAll'))} title="Collapse all">
+              <button
+                type="button"
+                class="btn"
+                disabled={!ready}
+                onClick={async () => bump(await client.call('collapseAll'))}
+                title="Collapse all"
+              >
                 Collapse
               </button>
             </>
@@ -375,12 +475,21 @@ export function JsonViewer({ source, history, actions, onLoaded }: Props) {
         </div>
       </header>
 
+      {busy && slow && (
+        <div class="hint" role="status">
+          Query is taking a while…{' '}
+          <button type="button" class="btn small" onClick={stop} data-testid="stop-button">
+            Stop
+          </button>{' '}
+          <span class="muted">(stopping reloads the document)</span>
+        </div>
+      )}
       {result?.error && (
         <div class="hint error" role="alert" data-testid="query-error">
           {result.error.message}
           {result.error.position !== undefined && (
             <pre class="caret-line">
-              {query}
+              {query.trim()}
               {'\n' + ' '.repeat(result.error.position) + '^'}
             </pre>
           )}
@@ -414,7 +523,8 @@ export function JsonViewer({ source, history, actions, onLoaded }: Props) {
             onCopyValue={copyValue}
           />
         )}
-        {ready && view === 'text' &&
+        {ready &&
+          view === 'text' &&
           (text === null ? <div class="center muted">Formatting…</div> : <TextView text={text} dark={isDark(theme)} />)}
         {showResults && result && (
           <ResultsPane
@@ -430,14 +540,24 @@ export function JsonViewer({ source, history, actions, onLoaded }: Props) {
 
       <footer class="status">
         {selectedPath ? (
-          <button type="button" class="path-btn" title="Copy path" onClick={() => copyText(selectedPath).then(() => flash('Copied path'))} data-testid="selected-path">
+          <button
+            type="button"
+            class="path-btn"
+            title="Copy path"
+            onClick={() => copyText(selectedPath).then(() => flash('Copied path'))}
+            data-testid="selected-path"
+          >
             {selectedPath}
           </button>
         ) : (
           <span class="muted">Click a node to see its JSONPath · press / to search</span>
         )}
         <span class="spacer" />
-        {toast && <span class="toast" role="status">{toast}</span>}
+        {toast && (
+          <span class="toast" role="status">
+            {toast}
+          </span>
+        )}
         {info && (
           <span class="muted" data-testid="doc-info">
             {info.kind === 'ndjson'

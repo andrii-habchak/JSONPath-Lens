@@ -194,12 +194,12 @@ pre {
   display: flex;
   align-items: center;
   gap: 6px;
-  flex: 1 1 560px;
+  flex: 1 1 760px;
   min-width: 0;
 }
 .query-input {
   flex: 1;
-  min-width: 120px;
+  min-width: 260px;
   font-family: var(--mono);
   font-size: 13px;
   padding: 5px 8px;

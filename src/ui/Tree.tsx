@@ -27,7 +27,17 @@ export function Tree(props: Props) {
   const range = useRef<[number, number]>([0, 0]);
   const cacheVersion = useRef(-1);
   const [, rerender] = useState(0);
-  const [selIndex, setSelIndex] = useState(-1);
+  // Keyboard cursor (row index). A ref so rapid key presses never read a stale value.
+  const cursor = useRef(-1);
+  const setSelIndex = (i: number) => {
+    cursor.current = i;
+  };
+  // Scroll requests: from the parent (matches) and from keyboard navigation.
+  const [scrollReq, setScrollReq] = useState<ScrollRequest | null>(null);
+  const scrollNonce = useRef(0);
+  useEffect(() => {
+    if (props.scrollTo) setScrollReq({ ...props.scrollTo, nonce: ++scrollNonce.current });
+  }, [props.scrollTo?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchRange = useCallback(
     (start: number, end: number, v: number) => {
@@ -73,26 +83,57 @@ export function Tree(props: Props) {
     [version, fetchRange],
   );
 
-  // Keep the keyboard cursor in sync with external selection.
+  // Keep the keyboard cursor on the selected node after the tree or the
+  // selection changes from outside (clicks, matches, expand/collapse).
+  // Selections made by the tree itself (keyboard/click) at a given version: the
+  // cursor is already right for those. A map, since several key presses can be
+  // processed before the parent re-renders.
+  const selfSelected = useRef(new Map<number, number>());
+  const markSelf = (id: number) => {
+    if (selfSelected.current.size > 500) selfSelected.current.clear();
+    selfSelected.current.set(id, version);
+  };
+  const latestSel = useRef(props.selectedId);
+  latestSel.current = props.selectedId;
   useEffect(() => {
-    for (const [i, r] of cache.current) {
-      if (r.id === props.selectedId) {
-        setSelIndex(i);
+    const id = props.selectedId;
+    if (id < 0) {
+      setSelIndex(-1);
+      return;
+    }
+    if (selfSelected.current.get(id) === version) return; // the tree already put the cursor there
+    const at = cursor.current;
+    client
+      .call('rowOf', id)
+      .then((row) => {
+        // Skip if the selection changed or the keyboard moved the cursor meanwhile.
+        if (latestSel.current === id && cursor.current === at) setSelIndex(row);
+      })
+      .catch(() => {});
+  }, [props.selectedId, version, client]);
+
+  const go = async (i: number) => {
+    if (visibleCount === 0) return;
+    const idx = Math.max(0, Math.min(visibleCount - 1, i));
+    cursor.current = idx;
+    setScrollReq({ index: idx, nonce: ++scrollNonce.current, align: 'auto' });
+    let r = cacheVersion.current === version ? cache.current.get(idx) : undefined;
+    if (!r) {
+      try {
+        [r] = await client.call('rows', idx, 1);
+      } catch {
         return;
       }
     }
-  }, [props.selectedId, version]);
+    // Ignore if the cursor moved on while the row was being fetched.
+    if (!r || cursor.current !== idx) return;
+    markSelf(r.id);
+    props.onSelect(r, idx);
+  };
 
   const onKeyDown = (e: TargetedKeyboardEvent<HTMLDivElement>) => {
+    const selIndex = cursor.current;
     const cur = selIndex >= 0 ? cache.current.get(selIndex) : undefined;
-    const go = (i: number) => {
-      const idx = Math.max(0, Math.min(visibleCount - 1, i));
-      const r = cache.current.get(idx);
-      if (r) {
-        setSelIndex(idx);
-        props.onSelect(r, idx);
-      }
-    };
     switch (e.key) {
       case 'ArrowDown':
         go(selIndex + 1);
@@ -109,6 +150,9 @@ export function Tree(props: Props) {
       case 'Home':
         go(0);
         break;
+      case 'End':
+        go(visibleCount - 1);
+        break;
       case 'ArrowRight':
         if (cur && cur.size > 0 && !cur.expanded) props.onToggle(cur, false);
         else go(selIndex + 1);
@@ -116,13 +160,12 @@ export function Tree(props: Props) {
       case 'ArrowLeft':
         if (cur && cur.size > 0 && cur.expanded) props.onToggle(cur, false);
         else if (cur && cur.parent >= 0) {
-          for (let i = selIndex - 1; i >= 0; i--) {
-            const r = cache.current.get(i);
-            if (r && r.id === cur.parent) {
-              go(i);
-              break;
-            }
-          }
+          client
+            .call('rowOf', cur.parent)
+            .then((i) => {
+              if (i >= 0) go(i);
+            })
+            .catch(() => {});
         }
         break;
       case 'Enter':
@@ -148,6 +191,7 @@ export function Tree(props: Props) {
         current={r.id === props.currentMatchId}
         onSelect={() => {
           setSelIndex(i);
+          markSelf(r.id);
           props.onSelect(r, i);
         }}
         onToggle={(rec) => props.onToggle(r, rec)}
@@ -164,7 +208,7 @@ export function Tree(props: Props) {
       rowHeight={ROW_HEIGHT}
       renderRow={renderRow}
       onRange={onRange}
-      scrollTo={props.scrollTo}
+      scrollTo={scrollReq}
       tabIndex={0}
       onKeyDown={onKeyDown}
       role="tree"
@@ -222,8 +266,8 @@ function TreeRow({ row, selected, current, onSelect, onToggle, onCopyPath, onCop
       <span class="colon">{row.depth === 0 ? ' ' : ': '}</span>
       {container ? (
         <span class="summary">
-          <span class="bracket">{row.type === 'object' ? '{…}' : '[…]'}</span>{' '}
-          {row.size} {row.type === 'object' ? (row.size === 1 ? 'key' : 'keys') : row.size === 1 ? 'item' : 'items'}
+          <span class="bracket">{row.type === 'object' ? '{…}' : '[…]'}</span> {row.size}{' '}
+          {row.type === 'object' ? (row.size === 1 ? 'key' : 'keys') : row.size === 1 ? 'item' : 'items'}
         </span>
       ) : row.type === 'error' ? (
         <span class="v t-error" title={row.error}>

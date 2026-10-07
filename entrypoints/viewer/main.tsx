@@ -1,14 +1,22 @@
 import { useEffect, useMemo, useState } from 'preact/hooks';
 import { nameFromUrl } from '../../src/shared/names';
-import { MSG_LOAD, MSG_READY, MSG_SHOW_ORIGINAL, RAW_HASH, type LoadMessage, type Stashed, type UnstashMessage } from '../../src/shared/messages';
+import {
+  MSG_LOAD,
+  MSG_READY,
+  MSG_SHOW_ORIGINAL,
+  RAW_HASH,
+  type LoadMessage,
+  type Stashed,
+  type UnstashMessage,
+} from '../../src/shared/messages';
 import { QueryHistory } from '../../src/ui/history';
 import { JsonViewer, type ViewerSource } from '../../src/ui/JsonViewer';
 import { mount } from '../../src/ui/mount';
 
 /**
  * Viewer page. Normally embedded by the content script in a tab that shows a
- * JSON URL; receives the text via postMessage. With `?src=<url>` it fetches the
- * URL itself (fallback when embedding is not possible).
+ * JSON URL; receives the text via postMessage. For CSP-sandboxed responses the
+ * background opens it top-level with `?stash=<token>` and hands the text over.
  */
 function ViewerPage() {
   const [source, setSource] = useState<ViewerSource | null>(null);
@@ -17,25 +25,32 @@ function ViewerPage() {
   const history = useMemo(() => new QueryHistory(), []);
   const embedded = window.parent !== window;
 
-  const params = new URLSearchParams(location.search);
-  const src = params.get('src');
+  const token = new URLSearchParams(location.search).get('stash');
+  // Set once the stashed document arrives; used by the "Original" button.
+  const [src, setSrc] = useState<string | null>(null);
 
   useEffect(() => {
-    if (src) {
-      document.title = `${nameFromUrl(src)} — JSONPath Lens`;
-      const token = params.get('stash');
-      const viaStash: Promise<Stashed | null> = token
-        ? chrome.runtime.sendMessage({ type: 'jpl-unstash', token } satisfies UnstashMessage)
-        : Promise.resolve(null);
-      viaStash
+    if (token) {
+      if (embedded) {
+        setError('This page cannot be embedded.');
+        return;
+      }
+      const ask: UnstashMessage = { type: 'jpl-unstash', token };
+      (chrome.runtime.sendMessage(ask) as Promise<Stashed | null>)
         .then(async (item) => {
-          if (item) {
-            setSource({ input: item.text, contentType: item.contentType, name: nameFromUrl(src) });
+          if (!item) {
+            setError('This view has expired. Reload the original page to view it again.');
             return;
           }
-          // Re-fetch (stash expired, too large, or opened directly with ?src=).
-          const r = await fetch(src, { credentials: 'include' });
-          setSource({ input: await r.text(), contentType: r.headers.get('content-type'), name: nameFromUrl(src) });
+          setSrc(item.url);
+          document.title = `${nameFromUrl(item.url)} — JSONPath Lens`;
+          if (item.text !== undefined) {
+            setSource({ input: item.text, contentType: item.contentType, name: nameFromUrl(item.url) });
+            return;
+          }
+          // Too large to hand over: re-fetch the URL the background vouched for.
+          const r = await fetch(item.url, { credentials: 'include' });
+          setSource({ input: await r.text(), contentType: r.headers.get('content-type'), name: nameFromUrl(item.url) });
         })
         .catch((e: Error) => setError(e.message));
       return;

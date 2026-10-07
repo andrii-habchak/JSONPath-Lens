@@ -35,6 +35,8 @@
     "@types/chrome": "^0.3.4",
     "@types/node": "^22.20.5",
     "eslint": "^10.12.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.13.0",
     "prettier": "^3.9.9",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",

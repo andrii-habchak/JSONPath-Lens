@@ -66,6 +66,27 @@ export function VirtualList(props: Props) {
     }
   }, [spacerPx, height]);
 
+  // With scaled scrolling a wheel tick would skip rows: scroll by the
+  // unscaled distance instead (accumulating sub-pixel remainders).
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || scale <= 1) return;
+    let acc = 0;
+    const onWheel = (e: WheelEvent) => {
+      if (e.ctrlKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+      e.preventDefault();
+      const unit = e.deltaMode === 1 ? rowHeight : e.deltaMode === 2 ? el.clientHeight : 1;
+      acc += (e.deltaY * unit) / scale;
+      const whole = Math.trunc(acc);
+      if (whole !== 0) {
+        acc -= whole;
+        el.scrollTop += whole;
+      }
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [scale, rowHeight]);
+
   const { onRange } = props;
   useEffect(() => {
     onRange?.(start, end);

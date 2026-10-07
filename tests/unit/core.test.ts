@@ -30,7 +30,7 @@ const SAMPLE = {
 describe('parse', () => {
   it('strips BOM and XSSI prefixes', () => {
     expect(cleanText('﻿{"a":1}')).toBe('{"a":1}');
-    expect(cleanText(")]}',\n{\"a\":1}")).toBe('{"a":1}');
+    expect(cleanText(')]}\',\n{"a":1}')).toBe('{"a":1}');
     expect(cleanText('while(1);[1]')).toBe('[1]');
   });
 
@@ -61,7 +61,8 @@ describe('parse', () => {
 });
 
 describe('ndjson', () => {
-  const nd = '{"level":"INFO","service":"wallet"}\n\n{"level":"ERROR","service":"wallet","id":1}\nnot json\n{"level":"ERROR","service":"bonus"}\n';
+  const nd =
+    '{"level":"INFO","service":"wallet"}\n\n{"level":"ERROR","service":"wallet","id":1}\nnot json\n{"level":"ERROR","service":"bonus"}\n';
 
   it('detects by heuristic and keeps bad lines', () => {
     expect(looksLikeNdjson(nd)).toBe(true); // 3 of 4 lines parse
@@ -215,7 +216,10 @@ describe('tree', () => {
   it('returns matched values as a JSON array', () => {
     const doc = load('{"a":[{"x":1},{"x":2}]}');
     doc.query('$.a[*].x');
-    expect(JSON.parse(doc.resultsText())).toEqual([1, 2]);
+    expect(JSON.parse(doc.resultsText().text)).toEqual([1, 2]);
+    const capped = doc.resultsText(12);
+    expect(JSON.parse(capped.text)).toEqual([1]);
+    expect(capped.total).toBe(2);
   });
 });
 
@@ -227,7 +231,9 @@ describe('serializer paths agree', () => {
     for (const indent of [0, 2]) {
       expect(serialize(doc.index, 0, indent)).toBe(serializeIterative(doc.index, 0, indent));
     }
-    expect(serialize(doc.index, 0, 0)).toBe('{"a":[1,{"b":null,"c":"x\\"y"}],"big":12345678901234567890,"arr":[98765432109876543210,1.5e+300],"e":{},"f":[]}');
+    expect(serialize(doc.index, 0, 0)).toBe(
+      '{"a":[1,{"b":null,"c":"x\\"y"}],"big":12345678901234567890,"arr":[98765432109876543210,1.5e+300],"e":{},"f":[]}',
+    );
   });
 
   it('does not touch digits inside strings or floats', () => {
@@ -241,5 +247,39 @@ describe('serializer paths agree', () => {
     const doc = load('12345678901234567890');
     expect(doc.text('pretty')).toBe('12345678901234567890');
     expect(doc.info.rootType).toBe('number');
+  });
+});
+
+describe('big-int placeholder hardening', () => {
+  it('does not treat look-alike strings as placeholders', () => {
+    const doc = load('["\\u0000\\u0001hello", 12345678901234567890, "\\u0000x:123"]');
+    expect(doc.query('$[0]').results[0].type).toBe('string');
+    expect(doc.query('$[2]').results[0].type).toBe('string');
+    expect(doc.valueText(0, false)).toBe('["\\u0000\\u0001hello",12345678901234567890,"\\u0000x:123"]');
+    expect(doc.text('pretty')).toContain('12345678901234567890');
+  });
+
+  it('still rejects leading zeros', () => {
+    expect(JsonDocument.load('[0000000000000000001]').ok).toBe(false);
+    expect(JsonDocument.load('[-00000000000000000012]').ok).toBe(false);
+  });
+});
+
+describe('review fixes', () => {
+  it('rewrites =~ with slashes in character classes and control chars', () => {
+    expect(runJsonPath('$[?@.a =~ /a[/]b/]', [{ a: 'xa/by' }, { a: 'ab' }]).locations).toEqual([[0]]);
+    expect(runJsonPath('$[?@.a =~ /a\tb/]', [{ a: 'a\tb' }]).locations).toEqual([[0]]);
+  });
+
+  it('quick-search regex accepts non-unicode escapes', () => {
+    const doc = load('{"a":"x-y","b":"a{b"}');
+    expect(doc.query('x\\-y', { regex: true }).total).toBe(1);
+    expect(doc.query('a{b', { regex: true }).total).toBe(1);
+  });
+
+  it('parses application/json-seq records', () => {
+    const doc = load('\u001e{"a":1}\n\u001e{"a":2}\n', 'application/json-seq');
+    expect(doc.info.badLines).toBe(0);
+    expect(doc.query('$[*].a').total).toBe(2);
   });
 });

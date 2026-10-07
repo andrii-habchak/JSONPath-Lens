@@ -4,16 +4,7 @@ import { pathOf } from './path';
 import { runJsonPath, textSearch } from './query';
 import { previewOf, serialize, serializeDocument } from './serialize';
 import { TreeState } from './tree';
-import {
-  T,
-  TYPE_NAMES,
-  type LoadError,
-  type LoadInfo,
-  type QueryOptions,
-  type QueryResult,
-  type ResultItem,
-  type Row,
-} from './types';
+import { T, TYPE_NAMES, type LoadError, type LoadInfo, type QueryOptions, type QueryResult, type ResultItem, type Row } from './types';
 
 /** How many matches get their ancestors auto-expanded after a query. */
 const AUTO_EXPAND_LIMIT = 500;
@@ -48,10 +39,7 @@ export class JsonDocument {
     this.matchFlags = new Uint8Array(index.count);
   }
 
-  static load(
-    text: string,
-    contentType?: string | null,
-  ): { ok: true; doc: JsonDocument } | { ok: false; error: LoadError } {
+  static load(text: string, contentType?: string | null): { ok: true; doc: JsonDocument } | { ok: false; error: LoadError } {
     const t0 = performance.now();
     const parsed = parseDocument(text, contentType);
     if (!parsed.ok) return parsed;
@@ -151,10 +139,22 @@ export class JsonDocument {
     return serialize(this.index, 0, 2);
   }
 
-  /** Matched values as a pretty JSON array. */
-  resultsText(): string {
-    const parts = this.matchIds.map((id) => serialize(this.index, id, 2).replace(/\n/g, '\n  '));
-    return parts.length ? '[\n  ' + parts.join(',\n  ') + '\n]' : '[]';
+  /**
+   * Matched values as a pretty JSON array. Stops early (valid JSON, fewer
+   * items) when the text would exceed `maxChars`, since nested matches repeat
+   * their subtrees.
+   */
+  resultsText(maxChars = 64 * 1024 * 1024): { text: string; count: number; total: number } {
+    const parts: string[] = [];
+    let size = 4;
+    for (const id of this.matchIds) {
+      const part = serialize(this.index, id, 2).replace(/\n/g, '\n  ');
+      if (size + part.length + 4 > maxChars) break;
+      parts.push(part);
+      size += part.length + 4;
+    }
+    const text = parts.length ? '[\n  ' + parts.join(',\n  ') + '\n]' : '[]';
+    return { text, count: parts.length, total: this.matchIds.length };
   }
 
   clearQuery(): number {

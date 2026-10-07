@@ -46,12 +46,20 @@ export function getEnvironment(): JSONPathEnvironment {
  * (dotted names, quoted names, indices, wildcards).
  */
 const SUGAR =
-  /((?:@|\$)(?:\.[A-Za-z_$][\w$]*|\.\*|\[\s*(?:'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"|-?\d+|\*)\s*\])*)\s*=~\s*\/((?:\\.|[^/\\\n])+)\/([dgimsuvy]*)/g;
+  /((?:@|\$)(?:\.[A-Za-z_$][\w$]*|\.\*|\[\s*(?:'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"|-?\d+|\*)\s*\])*)\s*=~\s*\/((?:\\.|\[(?:\\.|[^\]\\\n])*\]|[^/\\\n[])+)\/([dgimsuvy]*)/g;
+
+const SHORT_ESCAPES: Record<string, string> = { '\t': '\\t', '\n': '\\n', '\r': '\\r', '\b': '\\b', '\f': '\\f' };
 
 /** Turn a JS regex literal body into a single-quoted JSONPath string literal. */
 export function toPathString(regexBody: string): string {
   const unescapedSlash = regexBody.replace(/\\\//g, '/');
-  return "'" + unescapedSlash.replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "'";
+  const escaped = unescapedSlash
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    // Raw control characters are not allowed in JSONPath string literals.
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u001f]/g, (c) => SHORT_ESCAPES[c] ?? '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'));
+  return "'" + escaped + "'";
 }
 
 /** Rewrite `@.x =~ /re/flags` into `regex(@.x, 're', 'flags')`. */
@@ -95,17 +103,14 @@ export interface TextSearchOptions {
 }
 
 /** Quick search over keys and/or primitive values. Returns matching node ids. */
-export function textSearch(
-  index: DocIndex,
-  pattern: string,
-  opts: TextSearchOptions,
-): { ids: number[]; error?: string } {
+export function textSearch(index: DocIndex, pattern: string, opts: TextSearchOptions): { ids: number[]; error?: string } {
   if (!pattern) return { ids: [] };
   let test: (s: string) => boolean;
   if (opts.regex) {
     let re: RegExp;
     try {
-      re = new RegExp(pattern, opts.caseSensitive ? 'u' : 'iu');
+      // No 'u' flag: keeps everyday patterns like \- or a{b valid.
+      re = new RegExp(pattern, opts.caseSensitive ? '' : 'i');
     } catch (e) {
       return { ids: [], error: (e as Error).message };
     }

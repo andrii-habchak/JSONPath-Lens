@@ -24,7 +24,8 @@ interface Props {
   current: number;
   busy: boolean;
   history: QueryHistory;
-  onPickHistory: (query: string, mode: string) => void;
+  /** `viaKeys`: browsing with ↑/↓ (applied without recording). */
+  onPickHistory: (query: string, mode: string, viaKeys?: boolean) => void;
   inputRef?: { current: HTMLInputElement | null };
 }
 
@@ -66,7 +67,7 @@ export function QueryBar(p: Props) {
       const next = e.key === 'ArrowUp' ? Math.min(entries.length - 1, cursor + 1) : cursor - 1;
       setCursor(next);
       if (next < 0) p.onInput('');
-      else p.onPickHistory(entries[next].query, entries[next].mode);
+      else p.onPickHistory(entries[next].query, entries[next].mode, true);
     } else if (e.key === 'F3' || (e.key === 'g' && (e.metaKey || e.ctrlKey))) {
       e.preventDefault();
       if (e.shiftKey) p.onPrev();
@@ -82,7 +83,10 @@ export function QueryBar(p: Props) {
 
   return (
     <div class="querybar" ref={wrapRef}>
-      <span class={'mode-chip ' + (pathMode ? 'path' : t.regex ? 'regex' : 'text')} title="Queries starting with $ run as JSONPath; anything else is a quick search">
+      <span
+        class={'mode-chip ' + (pathMode ? 'path' : t.regex ? 'regex' : 'text')}
+        title="Queries starting with $ run as JSONPath; anything else is a quick search"
+      >
         {pathMode ? 'JSONPath' : t.regex ? 'Regex' : 'Text'}
       </span>
       <input

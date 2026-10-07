@@ -107,15 +107,20 @@ function Panel() {
     });
   }, [items, filter, onlyJson]);
 
+  // Late bodies for a request the user already left are dropped.
+  const currentId = useRef(-1);
+
   const pick = async (it: Captured) => {
+    currentId.current = it.id;
     setSelected(it);
     setBodyError('');
     setSource(null);
     try {
       const text = await getBody(it.entry);
+      if (currentId.current !== it.id) return;
       setSource({ input: text, contentType: it.mimeType, name: nameFromUrl(it.url) });
     } catch (e) {
-      setBodyError((e as Error).message);
+      if (currentId.current === it.id) setBodyError((e as Error).message);
     }
   };
 
@@ -123,9 +128,11 @@ function Panel() {
     setBodyError('');
     try {
       const res = await fetch(it.url, { credentials: 'include' });
-      setSource({ input: await res.text(), contentType: res.headers.get('content-type'), name: nameFromUrl(it.url) });
+      const text = await res.text();
+      if (currentId.current !== it.id) return;
+      setSource({ input: text, contentType: res.headers.get('content-type'), name: nameFromUrl(it.url) });
     } catch (e) {
-      setBodyError(`Re-fetch failed: ${(e as Error).message}`);
+      if (currentId.current === it.id) setBodyError(`Re-fetch failed: ${(e as Error).message}`);
     }
   };
 
@@ -160,6 +167,7 @@ function Panel() {
             class="btn small"
             title="Clear the list"
             onClick={() => {
+              currentId.current = -1;
               setItems([]);
               setSelected(null);
               setSource(null);
@@ -171,17 +179,20 @@ function Panel() {
         </div>
         <div class="panel-tools small">
           <label class="check">
-            <input type="checkbox" checked={onlyJson} onChange={(e) => setOnlyJson((e.currentTarget as HTMLInputElement).checked)} /> JSON only
+            <input type="checkbox" checked={onlyJson} onChange={(e) => setOnlyJson((e.currentTarget as HTMLInputElement).checked)} /> JSON
+            only
           </label>
           <label class="check" title="Keep requests when the page navigates">
-            <input type="checkbox" checked={preserve} onChange={(e) => setPreserve((e.currentTarget as HTMLInputElement).checked)} /> Preserve log
+            <input type="checkbox" checked={preserve} onChange={(e) => setPreserve((e.currentTarget as HTMLInputElement).checked)} />{' '}
+            Preserve log
           </label>
           <span class="muted">{visible.length}</span>
         </div>
         <div class="panel-items" role="listbox" aria-label="Captured requests">
           {visible.length === 0 && (
             <div class="muted pad small">
-              No {onlyJson ? 'JSON ' : ''}responses yet. Requests are captured while DevTools is open; reload the page to capture its startup requests.
+              No {onlyJson ? 'JSON ' : ''}responses yet. Requests are captured while DevTools is open; reload the page to capture its
+              startup requests.
             </div>
           )}
           {visible.map((it) => (

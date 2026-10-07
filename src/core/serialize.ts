@@ -91,7 +91,9 @@ export function serialize(index: DocIndex, id: number, indent = 2): string {
         );
       }
     } catch (e) {
-      if (!(e instanceof RangeError)) throw e;
+      // Too deep for native stringify -> iterative writer. A result too large for
+      // a JS string would fail there as well, so rethrow that one.
+      if (e instanceof RangeError && /string length/i.test(e.message)) throw e;
     }
   }
   return serializeIterative(index, id, indent);

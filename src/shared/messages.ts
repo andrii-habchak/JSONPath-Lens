@@ -32,7 +32,8 @@ export interface UnstashMessage {
 }
 
 export interface Stashed {
-  text: string;
+  /** Missing when the response was too large to hand over; the viewer re-fetches `url`. */
+  text?: string;
   contentType: string;
   url: string;
 }

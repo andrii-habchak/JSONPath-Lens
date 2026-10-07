@@ -18,7 +18,11 @@ function Options() {
       </h1>
       <section>
         <label class="opt">
-          <input type="checkbox" checked={s.autoDetect} onChange={(e) => save({ autoDetect: (e.currentTarget as HTMLInputElement).checked })} />
+          <input
+            type="checkbox"
+            checked={s.autoDetect}
+            onChange={(e) => save({ autoDetect: (e.currentTarget as HTMLInputElement).checked })}
+          />
           <span>
             <strong>Auto-beautify JSON URLs</strong>
             <br />
@@ -29,8 +33,22 @@ function Options() {
       <section>
         <label class="field">
           <strong>Skip these hosts</strong>
-          <span class="muted">One per line. Exact host (<code>api.example.com</code>) or wildcard (<code>*.example.com</code>).</span>
-          <textarea rows={5} value={blocklist} onInput={(e) => setBlocklist((e.currentTarget as HTMLTextAreaElement).value)} onBlur={() => save({ blocklist: blocklist.split('\n').map((x) => x.trim()).filter(Boolean) })} />
+          <span class="muted">
+            One per line. Exact host (<code>api.example.com</code>) or wildcard (<code>*.example.com</code>).
+          </span>
+          <textarea
+            rows={5}
+            value={blocklist}
+            onInput={(e) => setBlocklist((e.currentTarget as HTMLTextAreaElement).value)}
+            onBlur={() =>
+              save({
+                blocklist: blocklist
+                  .split('\n')
+                  .map((x) => x.trim())
+                  .filter(Boolean),
+              })
+            }
+          />
         </label>
       </section>
       <section class="row-fields">
@@ -57,8 +75,8 @@ function Options() {
       <p class="muted small">{saved ? 'Saved.' : 'Changes are saved automatically.'}</p>
       <section class="muted small">
         <strong>Shortcuts</strong>: <code>Alt+Shift+J</code> opens the workspace (change it at <code>chrome://extensions/shortcuts</code>) ·{' '}
-        <code>/</code> focuses the query bar · <code>Enter</code>/<code>Shift+Enter</code> next/previous match · <code>↑/↓</code> in an empty query bar
-        browses history · <code>Esc</code> clears the query.
+        <code>/</code> focuses the query bar · <code>Enter</code>/<code>Shift+Enter</code> next/previous match · <code>↑/↓</code> in an
+        empty query bar browses history · <code>Esc</code> clears the query.
       </section>
     </div>
   );

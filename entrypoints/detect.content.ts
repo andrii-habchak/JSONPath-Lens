@@ -30,20 +30,27 @@ export default defineContentScript({
       // CSP `sandbox` pages cannot run scripts in child frames: open the viewer in the tab.
       const msg: StashMessage = {
         type: 'jpl-stash',
-        // Messages are limited to 64 MiB; above that the viewer re-fetches the URL.
-        text: found.text.length < 60_000_000 ? found.text : undefined,
+        // Messages are limited to 64 MiB once serialized; above ~25M chars the viewer re-fetches the URL.
+        text: found.text.length < 25_000_000 ? found.text : undefined,
         contentType: found.contentType,
         url: location.href,
       };
-      chrome.runtime.sendMessage(msg);
+      chrome.runtime.sendMessage(msg).catch(() => {
+        // Could not hand over (e.g. extension reloaded): leave the page as is.
+      });
       return;
     }
     mountViewer(found.text, found.contentType);
   },
 });
 
-/** Opaque origin = the document is sandboxed (e.g. `Content-Security-Policy: sandbox`). */
+/**
+ * Opaque origin on an http(s) page = the document is sandboxed (e.g.
+ * `Content-Security-Policy: sandbox`). file:// pages also have an opaque
+ * origin but can host the iframe normally.
+ */
 function isSandboxed(): boolean {
+  if (location.protocol !== 'http:' && location.protocol !== 'https:') return false;
   try {
     return window.origin === 'null';
   } catch {

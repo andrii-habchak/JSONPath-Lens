@@ -25,7 +25,13 @@ export function ResultsPane({ result, current, scrollTo, onPick, onCopyResults, 
         {shown < result.total && <span class="muted"> (showing {formatCount(shown)})</span>}
         <span class="muted"> · {result.ms} ms</span>
         <span class="spacer" />
-        <button type="button" class="btn small" onClick={onCopyResults} disabled={!result.total} title="Copy matched values as a JSON array">
+        <button
+          type="button"
+          class="btn small"
+          onClick={onCopyResults}
+          disabled={!result.total}
+          title="Copy matched values as a JSON array"
+        >
           Copy results
         </button>
         <button type="button" class="btn small icon" onClick={onClose} title="Hide results (Esc clears the query)">

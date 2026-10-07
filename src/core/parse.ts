@@ -6,9 +6,22 @@ import type { DocKind, LoadError } from './types';
  * before `JSON.parse` and turned back into numbers by the indexer, which
  * keeps the exact digits. This is ~8x faster than a reviver on large payloads.
  */
-export const BIG_PREFIX = '\u0000\u0001';
+const BIG_TAG = randomTag();
+export const BIG_PREFIX = '\u0000' + BIG_TAG + ':';
 /** The same prefix as JSON escape text, inserted into the source before parsing. */
-const BIG_PREFIX_JSON = '\\u0000\\u0001';
+const BIG_PREFIX_JSON = '\\u0000' + BIG_TAG + ':';
+
+/** Random per-process tag so a document cannot forge a placeholder string. */
+function randomTag(): string {
+  const bytes = new Uint8Array(8);
+  globalThis.crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/** True for a placeholder produced by protectBigInts in this process. */
+export function isBigPlaceholder(v: unknown): v is string {
+  return typeof v === 'string' && v.charCodeAt(0) === 0 && v.startsWith(BIG_PREFIX) && /^-?[1-9]\d*$/.test(v.slice(BIG_PREFIX.length));
+}
 
 export interface NdError {
   message: string;
@@ -82,10 +95,13 @@ export function protectBigInts(s: string): { text: string; count: number } {
         if (d >= 48 && d <= 57) i++;
         else break;
       }
-      const digits = i - start - (c === 45 ? 1 : 0);
+      const neg = c === 45 ? 1 : 0;
+      const digits = i - start - neg;
       const next = s.charCodeAt(i);
       const isFloat = next === 46 || next === 101 || next === 69;
-      if (digits >= 16 && !isFloat) {
+      // A leading zero makes the literal invalid JSON; leave it for JSON.parse to reject.
+      const leadingZero = s.charCodeAt(start + neg) === 48;
+      if (digits >= 16 && !isFloat && !leadingZero) {
         parts.push(s.slice(last, start), '"', BIG_PREFIX_JSON, s.slice(start, i), '"');
         last = i;
         count++;
@@ -178,7 +194,11 @@ export function parseNdjson(text: string): ParsedDoc {
     let end = text.indexOf('\n', start);
     if (end === -1) end = text.length;
     lineNo++;
-    const raw = text.slice(start, end).replace(/\r$/, '');
+    // Strip CR (CRLF files) and the RS record separator of application/json-seq.
+    const raw = text
+      .slice(start, end)
+      .replace(/\r$/, '')
+      .replace(/^\u001e/, ''); // eslint-disable-line no-control-regex
     start = end + 1;
     if (raw.trim() === '') {
       if (end === text.length) break;

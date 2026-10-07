@@ -17,7 +17,8 @@ export interface WorkerApi {
   path(id: number): string;
   valueText(id: number, pretty: boolean): string;
   text(kind: 'pretty' | 'original'): string;
-  resultsText(): string;
+  resultsText(maxChars?: number): { text: string; count: number; total: number };
+  rowOf(id: number): number;
 }
 
 export type Method = keyof WorkerApi;
@@ -28,6 +29,4 @@ export interface Request<M extends Method = Method> {
   args: Parameters<WorkerApi[M]>;
 }
 
-export type Response =
-  | { seq: number; ok: true; result: unknown }
-  | { seq: number; ok: false; error: string };
+export type Response = { seq: number; ok: true; result: unknown } | { seq: number; ok: false; error: string };

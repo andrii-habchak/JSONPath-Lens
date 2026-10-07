@@ -16,7 +16,7 @@ export function makeLargeJson(targetMb: number): string {
       meta: { createdAt: '2026-10-07T12:00:00Z', flags: { vip: i % 50 === 0, test: false } },
     };
     items.push(item);
-    size += 330;
+    size += JSON.stringify(item).length + 1;
     i++;
   }
   return JSON.stringify({ total: items.length, items });

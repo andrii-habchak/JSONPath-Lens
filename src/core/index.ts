@@ -1,4 +1,4 @@
-import { BIG_PREFIX, type NdError, type ParsedDoc } from './parse';
+import { BIG_PREFIX, isBigPlaceholder, type NdError, type ParsedDoc } from './parse';
 import { T, type TypeCode } from './types';
 
 /**
@@ -184,9 +184,7 @@ export class DocIndex {
   }
 }
 
-function isBig(v: unknown): boolean {
-  return typeof v === 'string' && v.charCodeAt(0) === 0 && v.startsWith(BIG_PREFIX);
-}
+const isBig = isBigPlaceholder;
 
 function typeOf(v: unknown): TypeCode {
   if (v === null) return T.Null;

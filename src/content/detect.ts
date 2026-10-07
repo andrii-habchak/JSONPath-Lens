@@ -34,7 +34,7 @@ export function detectJson(doc: Document): Detected | null {
   if (!body) return null;
   for (const el of Array.from(body.children)) if (!isBrowserChrome(el)) return null;
   const pre = body.querySelector(':scope > pre');
-  const text = pre ? pre.textContent ?? '' : body.textContent ?? '';
+  const text = pre ? (pre.textContent ?? '') : (body.textContent ?? '');
   if (!text.trim()) return null;
   if (isPlain && !looksLikeJsonText(text)) return null;
   return { text, contentType: isPlain ? 'text/plain' : contentType };
